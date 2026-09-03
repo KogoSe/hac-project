@@ -108,7 +108,10 @@ def render():
             "mdbaux":   [(name, val) for name, val in MDBAUX_DEFAULTS],
             "spare_count":  1,
             "spare":    [(name, val) for name, val in SPARE_DEFAULTS],
+            
         }
+        if not smart_defaults:                                    # ← เพิ่มตรงนี้ ย่อเท่ากับบรรทัดบน
+            st.info("ℹ️ ยังไม่พบผลคำนวณจาก tab Equipment Sizing — ใช้ค่า default พื้นฐานไปก่อน (เปิด tab 3 ก่อนแล้วกลับมาที่นี่ใหม่เพื่อ auto-fill)")
 
     attr_state = st.session_state.sld_attrs[grp_key]
 
