@@ -9,7 +9,7 @@ from engine.pairing import (
     parse_rack_layout, build_row_units, brute_force_grouping,
     assign_pairing, compute_normal_loads, compute_fault_loads,
 )
-from engine.sizing import compute_load_chain, select_equipment, unify_common_sizes
+from engine.sizing import compute_load_chain, select_equipment, unify_common_sizes, select_it_and_preups_busbar
 
 
 def util_bar_html(util: float | None, threshold: float) -> str:
@@ -116,10 +116,14 @@ def render():
 
         chain = compute_load_chain(grp_max_fault, grp_normal_total, cfg)
         equip = select_equipment(chain, cfg)
+        equip.update(select_it_and_preups_busbar(chain, cfg))   # ← เพิ่มบรรทัดนี้
         group_calcs.append({"gi": gi, "chain": chain, "equip": equip})
 
     # ── หาขนาดใหญ่สุดของ UPS / Generator / Transformer / Busway ร่วมกันทุกกลุ่ม ──
-    common_sizes = unify_common_sizes([gc["equip"] for gc in group_calcs])
+        common_sizes = unify_common_sizes(
+        [gc["equip"] for gc in group_calcs],
+        keys=("ups", "gen", "trafo", "busway", "it_busbar", "before_ups_busbar"),
+    )
 
     # เก็บผลไว้ให้ tab อื่น (เช่น tab 4 SLD) เรียกใช้ได้ต่อ โดยไม่ต้องคำนวณซ้ำ
     st.session_state.sizing_group_calcs = group_calcs
@@ -224,3 +228,6 @@ def render():
     st.header("📊 Comparison Summary — ทุกกลุ่ม")
     st.caption("ใช้เป็นฐานคำนวณขนาดอุปกรณ์จริงหน้างาน | UPS/Transformer/Generator/Busway ใช้ขนาดเดียวกันทุกกลุ่ม (เลือกจากค่ามากสุด)")
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+
+#เชื่อมระบบ
+

@@ -35,7 +35,55 @@ def build_overrides(state: dict) -> dict:
         for name, val in state["ptu_fix"]
         if val != default_dict.get(name, "")
     }
+#เชื่อมระบบ
+def compute_smart_ptu_fix_defaults() -> dict:
+    """
+    สร้างค่า default อัจฉริยะจากผลคำนวณ Equipment Sizing (tab 3)
+    คืน dict ว่างถ้ายังไม่เคยเปิด tab 3 ในเซสชันนี้ → fallback เป็นค่า default เดิมทั้งหมด
+    """
+    sizes = st.session_state.get("sizing_common_sizes")
+    if not sizes or any(v is None for v in sizes.values()):
+        return {}
 
+    ups_kw   = sizes["ups"]
+    trafo_kva = sizes["trafo"]
+    gen_kw   = sizes["gen"]
+    busway_a = sizes["busway"]
+    it_a     = sizes["it_busbar"]
+    preups_a = sizes["before_ups_busbar"]
+
+    GEN_PF_ASSUMED = 0.8  # ⚠️ สมมติ pf ของ Genset — แก้ manual ทีหลังได้ถ้าไม่ตรง spec
+    trafo_mva = trafo_kva / 1000
+    gen_mw    = gen_kw / 1000
+    gen_mva   = gen_mw / GEN_PF_ASSUMED
+
+    return {
+        "UPS_RATING":          f"{ups_kw:.0f}kW",
+        "TX_S_RATING":         f"{trafo_mva:.2f} MVA DRY TYPE (IP00) 22/0.4 kV, K-4 RATED,\nAL/AL 3P,4W, DYN11, %UK6, 50Hz",
+        "GEN_S_RATING":        f"{gen_mw:.1f}MW/{gen_mva:.1f}MVA 400V,3%%C, 50Hz GENERATOR",
+
+        "TX_S_BUSWAY":         f"{busway_a:.0f}A BUSWAY AL. IP 55 (BY PTU)",
+        "GEN_S_BASWAYTOPTU":   f"{busway_a:.0f}A BUSWAY AL. IP 68",
+        "PTU_MAINBUSBAR":      f"{busway_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
+        "GEN_S_BUSBARRATING":  f"{busway_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
+        "PTU_IF01":            f"{busway_a:.0f}AT {busway_a:.0f}AF 4P, ACB LSI (NC)",
+        "PTU_IF02":            f"{busway_a:.0f}AT {busway_a:.0f}AF 4P, ACB LSI (NO)",
+        "GEN_LEFT_ACB":        f"{busway_a:.0f}AT {busway_a:.0f}AF 4P, ACB, LSI (NC)",
+        "GEN_RIGHT_ACB":       f"{busway_a:.0f}AT {busway_a:.0f}AF 4P, ACB, LSI (NO)",
+
+        "PTU_BUSBARBEFOREUPS": f"{preups_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
+
+        "FINALBUSBAR01":       f"{it_a:.0f}A BUSWAY AL. IP 68",
+        "FINALBUSBAR02":       f"{it_a:.0f}A BUSWAY AL. IP 68",
+        "FINALBUSBAR03":       f"{it_a:.0f}A BUSWAY AL. IP 68",
+        "OUPS_MAINITBUSBAR":   f"{it_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
+        "OUPS_ITBUSBAR_IF02":  f"{it_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
+        "OUPS_CB_ITOF01":      f"{it_a:.0f}AT {it_a:.0f}AF TPN, ACB, LSI (NC)",
+        "OUPS_CB_ITOF02":      f"{it_a:.0f}AT {it_a:.0f}AF TPN, ACB, LSI (NC)",
+        "OUPS_CB_ITIF01":      f"{it_a:.0f}AT {it_a:.0f}AF 4P, ACB LSI (NO)",
+        "OUPS_CB_ITIF02":      f"{it_a:.0f}AT {it_a:.0f}AF TPN, ACB LSI (NC)",
+        "OUPS_CB_ITIF03":      f"{it_a:.0f}AT {it_a:.0f}AF TPN, ACB, LSI (NO)",
+    }
 
 def render():
     st.header("📐 SLD Attributes")
@@ -53,8 +101,9 @@ def render():
 
     if grp_key not in st.session_state.sld_attrs:
         # init ด้วย default values
+        smart_defaults = compute_smart_ptu_fix_defaults()  
         st.session_state.sld_attrs[grp_key] = {
-            "ptu_fix":  [(name, val) for name, val in PTU_FIX_DEFAULTS],
+            "ptu_fix":  [(name, smart_defaults.get(name, val)) for name, val in PTU_FIX_DEFAULTS],  # ← แก้บรรทัดนี้
             "mdbaux_count": 1,
             "mdbaux":   [(name, val) for name, val in MDBAUX_DEFAULTS],
             "spare_count":  1,

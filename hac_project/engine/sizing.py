@@ -123,3 +123,36 @@ def unify_common_sizes(group_equip_list: list[dict], keys: tuple = ("ups", "gen"
                 equip[key]["util"] = load / common_size if common_size else None
 
     return common_sizes
+
+#เชื่อมระบบ
+
+def select_it_and_preups_busbar(chain: dict, cfg: dict) -> dict:
+    """
+    เลือกขนาด Busbar เพิ่มอีก 2 จุด (นอกจาก Busway หลักใน select_equipment):
+    - it_busbar: กระแสจาก connected_it (Step 2, ก่อน UPS loss) — ใช้กับ FINALBUSBAR/OUPS_MAINITBUSBAR/OUPS_ITBUSBAR_IF02
+    - before_ups_busbar: กระแสจาก ups_total_out (Step 3, รวม UPS loss+charging) — ใช้กับ PTU_BUSBARBEFOREUPS
+    ใช้ pf/voltage/design_margin ชุดเดียวกับ Busway หลัก ไม่หาร util_threshold (ตาม pattern เดิมของ busway)
+    """
+    f = chain["fault"]
+    pf = cfg["pf"]
+    voltage = cfg["voltage"]
+    margin = cfg["design_margin"]
+
+    def amp_from_kw(kw):
+        kva = kw / pf
+        actual_amp = (kva * 1000) / (1.732 * voltage)
+        return actual_amp * margin
+
+    it_amp = amp_from_kw(f["connected_it"])
+    pre_amp = amp_from_kw(f["ups_total_out"])
+
+    it_size = select_standard_size(it_amp, cfg["busway_sizes"])
+    it_util = it_amp / it_size if it_size else None
+
+    pre_size = select_standard_size(pre_amp, cfg["busway_sizes"])
+    pre_util = pre_amp / pre_size if pre_size else None
+
+    return {
+        "it_busbar":         {"size": it_size,  "unit": "A", "load": it_amp,  "util": it_util},
+        "before_ups_busbar": {"size": pre_size, "unit": "A", "load": pre_amp, "util": pre_util},
+    }
