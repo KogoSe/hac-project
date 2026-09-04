@@ -106,6 +106,30 @@ def fix_multiline_attribs(blockref, overrides):
         attrib.dxf.text = flat_str
 
 
+def fix_attrib_placement(blockref):
+    """
+    แก้ปัญหา ezdxf add_auto_attribs() ที่บางครั้งไม่ transform 'align_point'
+    ของ ATTRIB ให้ตรงกับตำแหน่งจริงใน ATTDEF ต้นฉบับ — เกิดกับ attribute ที่
+    justify ไม่ใช่ baseline-left ธรรมดา (เช่น Top Left, Middle Center)
+    """
+    block_layout = blockref.block()
+    if block_layout is None:
+        return
+    attdefs = {a.dxf.tag: a for a in block_layout.attdefs()}
+    m = blockref.matrix44()
+
+    for attrib in blockref.attribs:
+        attdef = attdefs.get(attrib.dxf.tag)
+        if attdef is None:
+            continue
+        attrib.dxf.halign = attdef.dxf.halign
+        attrib.dxf.valign = attdef.dxf.valign
+        attrib.dxf.insert = m.transform(attdef.dxf.insert)
+        if attdef.dxf.halign != 0 or attdef.dxf.valign != 0:
+            align_src = attdef.dxf.align_point if attdef.dxf.hasattr("align_point") else attdef.dxf.insert
+            attrib.dxf.align_point = m.transform(align_src)
+
+
 def build_ptu_sld(feeder_list, ptu_fix_overrides=None):
     """
     feeder_list: list ของ dict เช่น
@@ -133,6 +157,7 @@ def build_ptu_sld(feeder_list, ptu_fix_overrides=None):
     ptu_fix_ref = msp.add_blockref("PTU_FIX", (0, 0), dxfattribs={"layer": "0"})
     ptu_fix_ref.add_auto_attribs(ptu_fix_overrides)
     fix_multiline_attribs(ptu_fix_ref, ptu_fix_overrides)
+    fix_attrib_placement(ptu_fix_ref)
 
     # 2) วาง MDBAUX/SPARE เรียงต่อจาก FEEDER_START_X ไปทางขวา (y เดียวกับ busbar)
     y0 = BUSBAR_START[1]
@@ -143,6 +168,7 @@ def build_ptu_sld(feeder_list, ptu_fix_overrides=None):
         blockref = msp.add_blockref(blk_name, insert_point, dxfattribs={"layer": "0"})
         blockref.add_auto_attribs({ATTR_TAGS[blk_name]: feeder["label"]})
         fix_multiline_attribs(blockref, {ATTR_TAGS[blk_name]: feeder["label"]})
+        fix_attrib_placement(blockref)
 
     # 3) วาด busbar เส้นเดียว เริ่มจาก BUSBAR_START ยาวไปทางขวาถึง feeder ตัวสุดท้าย
     x0, y0 = BUSBAR_START
@@ -194,6 +220,7 @@ def run_from_streamlit(feeder_list: list, ptu_fix_overrides: dict = None) -> byt
     ptu_fix_ref = msp.add_blockref("PTU_FIX", (0, 0), dxfattribs={"layer": "0"})
     ptu_fix_ref.add_auto_attribs(ptu_fix_overrides)
     fix_multiline_attribs(ptu_fix_ref, ptu_fix_overrides)
+    fix_attrib_placement(ptu_fix_ref)
 
     # 2) วาง MDBAUX/SPARE เรียงต่อจาก FEEDER_START_X
     y0 = BUSBAR_START[1]
@@ -203,6 +230,7 @@ def run_from_streamlit(feeder_list: list, ptu_fix_overrides: dict = None) -> byt
         blockref = msp.add_blockref(blk_name, insert_point, dxfattribs={"layer": "0"})
         blockref.add_auto_attribs({ATTR_TAGS[blk_name]: feeder["label"]})
         fix_multiline_attribs(blockref, {ATTR_TAGS[blk_name]: feeder["label"]})
+        fix_attrib_placement(blockref)
 
     # 3) วาด busbar
     x0, y0 = BUSBAR_START
