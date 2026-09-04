@@ -223,31 +223,46 @@ def render():
     st.subheader("🏗️ สร้าง Single Line Diagram")
     if st.button("🏗️ สร้าง SLD (.dxf)", type="primary", use_container_width=True):
         try:
-            feeder_list   = build_feeder_list(attr_state)
-            overrides     = build_overrides(attr_state)
-            dxf_bytes     = build_ptu_sldA.run_from_streamlit(feeder_list, overrides)
-            st.success(f"✅ สร้าง SLD สำเร็จ — {len(feeder_list)} feeder")
-            st.download_button(
-                label=f"⬇️ Download {selected_grp} SLD (.dxf)",
-                data=dxf_bytes,
-                file_name=f"ptu_sld_{grp_key}.dxf",
-                mime="application/octet-stream",
-                use_container_width=True,
-            )
-
-            try:
-                pdf_bytes = build_ptu_sldA.export_pdf_from_dxf_bytes(dxf_bytes, paper_size="A3")
-                st.download_button(
-                    label=f"📄 Plot {selected_grp} เป็น PDF (A3, Landscape, Monochrome)",
-                    data=pdf_bytes,
-                    file_name=f"ptu_sld_{grp_key}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
-
-            except Exception as e:
-                st.warning(f"⚠️ สร้าง PDF ไม่สำเร็จ (ไฟล์ .dxf ยังใช้ได้ปกติ): {e}")
+            feeder_list = build_feeder_list(attr_state)
+            overrides   = build_overrides(attr_state)
+            dxf_bytes   = build_ptu_sldA.run_from_streamlit(feeder_list, overrides)
+            # เก็บผลไว้ใน session_state แทนการใช้ในบล็อก if นี้ตรงๆ
+            # เพราะ st.download_button ทำให้หน้า rerun ทั้งหน้า — ถ้าไม่เก็บไว้ ผลจะหายทันทีที่กด download
+            st.session_state.sld_result = {
+                "grp_key": grp_key,
+                "selected_grp": selected_grp,
+                "feeder_count": len(feeder_list),
+                "dxf_bytes": dxf_bytes,
+            }
         except FileNotFoundError:
             st.error("❌ ไม่พบไฟล์ PTU_TEST.dxf — วางไฟล์ไว้ในโฟลเดอร์เดียวกับ app.py")
+            st.session_state.sld_result = None
         except Exception as e:
             st.error(f"❌ เกิดข้อผิดพลาด: {e}")
+            st.session_state.sld_result = None
+
+    # ── แสดงผล/ปุ่ม download — อยู่นอก if st.button(...) เพื่อไม่ให้หายตอน rerun ──
+    result = st.session_state.get("sld_result")
+    if result and result["grp_key"] == grp_key:
+        dxf_bytes = result["dxf_bytes"]
+        st.success(f"✅ สร้าง SLD สำเร็จ — {result['feeder_count']} feeder")
+        st.download_button(
+            label=f"⬇️ Download {result['selected_grp']} SLD (.dxf)",
+            data=dxf_bytes,
+            file_name=f"ptu_sld_{grp_key}.dxf",
+            mime="application/octet-stream",
+            use_container_width=True,
+            key=f"dxf_dl_{grp_key}",
+        )
+        try:
+            pdf_bytes = build_ptu_sldA.export_pdf_from_dxf_bytes(dxf_bytes, paper_size="A3")
+            st.download_button(
+                label=f"📄 Plot {result['selected_grp']} เป็น PDF (A3, Landscape, Monochrome)",
+                data=pdf_bytes,
+                file_name=f"ptu_sld_{grp_key}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key=f"pdf_dl_{grp_key}",
+            )
+        except Exception as e:
+            st.warning(f"⚠️ สร้าง PDF ไม่สำเร็จ (ไฟล์ .dxf ยังใช้ได้ปกติ): {e}")
