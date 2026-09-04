@@ -66,10 +66,10 @@ def compute_smart_ptu_fix_defaults() -> dict:
         "GEN_S_BASWAYTOPTU":   f"{busway_a:.0f}A BUSWAY AL. IP 68",
         "PTU_MAINBUSBAR":      f"{busway_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
         "GEN_S_BUSBARRATING":  f"{busway_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
-        "PTU_IF01":            f"{busway_a:.0f}AT {busway_a:.0f}AF 4P, ACB LSI (NC)",
-        "PTU_IF02":            f"{busway_a:.0f}AT {busway_a:.0f}AF 4P, ACB LSI (NO)",
-        "GEN_LEFT_ACB":        f"{busway_a:.0f}AT {busway_a:.0f}AF 4P, ACB, LSI (NC)",
-        "GEN_RIGHT_ACB":       f"{busway_a:.0f}AT {busway_a:.0f}AF 4P, ACB, LSI (NO)",
+        "PTU_IF01":            f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NC)",
+        "PTU_IF02":            f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NO)",
+        "GEN_LEFT_ACB":        f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB,\nLSI (NC)",
+        "GEN_RIGHT_ACB":       f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB,\nLSI (NO)",
 
         "PTU_BUSBARBEFOREUPS": f"{preups_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
 
@@ -78,11 +78,11 @@ def compute_smart_ptu_fix_defaults() -> dict:
         "FINALBUSBAR03":       f"{it_a:.0f}A BUSWAY AL. IP 68",
         "OUPS_MAINITBUSBAR":   f"{it_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
         "OUPS_ITBUSBAR_IF02":  f"{it_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
-        "OUPS_CB_ITOF01":      f"{it_a:.0f}AT {it_a:.0f}AF TPN, ACB, LSI (NC)",
-        "OUPS_CB_ITOF02":      f"{it_a:.0f}AT {it_a:.0f}AF TPN, ACB, LSI (NC)",
-        "OUPS_CB_ITIF01":      f"{it_a:.0f}AT {it_a:.0f}AF 4P, ACB LSI (NO)",
-        "OUPS_CB_ITIF02":      f"{it_a:.0f}AT {it_a:.0f}AF TPN, ACB LSI (NC)",
-        "OUPS_CB_ITIF03":      f"{it_a:.0f}AT {it_a:.0f}AF TPN, ACB, LSI (NO)",
+        "OUPS_CB_ITOF01":      f"{it_a:.0f}AT\n{it_a:.0f}AF\nTPN, ACB,\nLSI (NC)",
+        "OUPS_CB_ITOF02":      f"{it_a:.0f}AT\n{it_a:.0f}AF\nTPN, ACB,\nLSI (NC)",
+        "OUPS_CB_ITIF01":      f"{it_a:.0f}AT\n{it_a:.0f}AF\n4P, ACB\nLSI (NO)",
+        "OUPS_CB_ITIF02":      f"{it_a:.0f}AT\n{it_a:.0f}AF\nTPN, ACB\nLSI (NC)",
+        "OUPS_CB_ITIF03":      f"{it_a:.0f}AT\n{it_a:.0f}AF\nTPN,ACB,\nLSI (NO)",
     }
 
 def render():
