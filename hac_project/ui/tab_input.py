@@ -3,15 +3,70 @@ TAB 1: INPUT — กรอกข้อมูล HAC
 """
 import streamlit as st
 import pandas as pd
+import os
+import openpyxl
 
 from constants import SOURCE_OPTIONS
 from engine.pairing import parse_rack_layout
 from ui.svg_diagram import build_hac_svg
 
+EXCEL_IMPORT_PATH = "Input_datahall.xlsx"  # วางไว้ที่ hac_project/ (ระดับเดียวกับ app.py)
+
+
+def load_hac_df_from_excel(sheet_name: str) -> pd.DataFrame:
+    """
+    อ่าน sheet ที่เลือกจาก Input_datahall.xlsx → DataFrame รูปแบบเดียวกับ hac_df
+    โครงสร้างไฟล์: แถว 1 = header, แถว 2 เป็นต้นไป = ข้อมูล
+    คอลัมน์ A = HAC Name, B = Source type, C เป็นต้นไป = Layout Racks (ความยาวไม่เท่ากันได้)
+    """
+    wb = openpyxl.load_workbook(EXCEL_IMPORT_PATH, data_only=True)
+    ws = wb[sheet_name]
+
+    rows_out = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        name = row[0]
+        source = row[1]
+        if name is None or source is None:
+            continue  # แถวว่าง ข้ามไป
+        rack_values = [v for v in row[2:] if v is not None]
+        rack_str = ", ".join(str(int(v)) if float(v).is_integer() else str(v) for v in rack_values)
+        rows_out.append({
+            "HAC Name": str(name),
+            "Rack Layout (kW)": rack_str,
+            "Source Type": str(source),
+        })
+
+    return pd.DataFrame(rows_out)
+
 
 def render():
     st.header("กรอกข้อมูล HAC")
     st.caption("แต่ละ HAC มี 2 แถว (บน/ล่าง) | Source Type: 2-source (default) หรือ 4-source สำหรับ Liquid rack ≥100 kW")
+
+ # ── SECTION: Import จาก Excel ────────────────────────────
+    with st.expander("📥 Import ข้อมูลจาก Excel", expanded=False):
+        if os.path.exists(EXCEL_IMPORT_PATH):
+            try:
+                sheet_names = openpyxl.load_workbook(EXCEL_IMPORT_PATH, read_only=True).sheetnames
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    selected_sheet = st.selectbox("เลือก Sheet", options=sheet_names, key="excel_sheet_select")
+                with col2:
+                    st.write(""); st.write("")
+                    if st.button("📥 โหลดข้อมูล", use_container_width=True, type="primary"):
+                        new_df = load_hac_df_from_excel(selected_sheet)
+                        if len(new_df) == 0:
+                            st.warning(f"⚠️ ไม่พบข้อมูลใน sheet '{selected_sheet}'")
+                        else:
+                            st.session_state.hac_df = new_df   # ทับตารางเดิมทั้งหมด
+                            st.success(f"✅ โหลด {len(new_df)} แถวจาก sheet '{selected_sheet}' แล้ว")
+                            st.rerun()
+            except Exception as e:
+                st.error(f"❌ อ่านไฟล์ไม่สำเร็จ: {e}")
+        else:
+            st.info(f"ℹ️ ไม่พบไฟล์ `{EXCEL_IMPORT_PATH}` — วางไฟล์ไว้ในโฟลเดอร์เดียวกับ app.py แล้ว rerun ใหม่")
+
+    st.divider()
 
     # default data — Rack Layout แบบ string
     if "hac_df" not in st.session_state:
