@@ -249,3 +249,72 @@ def run_from_streamlit(feeder_list: list, ptu_fix_overrides: dict = None) -> byt
         dxf_bytes = f.read()
     os.unlink(tmp_path)
     return dxf_bytes
+
+
+
+def export_pdf_from_dxf_bytes(dxf_bytes: bytes, paper_size: str = "A3") -> bytes:
+    """
+    รับ dxf bytes -> render เป็น PDF (Landscape, Fit to paper, Center, Monochrome, vector quality)
+    ใช้ ezdxf.addons.drawing (matplotlib backend) ไม่ต้องพึ่ง AutoCAD เลย
+    paper_size: "A1" | "A3" | "A4"
+    """
+    import io
+    import os
+    import tempfile
+    import ezdxf
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from ezdxf.addons.drawing import RenderContext, Frontend
+    from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+    from ezdxf.addons.drawing.config import Configuration, ColorPolicy, BackgroundPolicy
+    from ezdxf.bbox import extents
+
+    PAPER_SIZES_MM = {"A1": (841, 594), "A3": (420, 297), "A4": (297, 210)}
+    page_w_mm, page_h_mm = PAPER_SIZES_MM.get(paper_size, PAPER_SIZES_MM["A3"])
+    page_w_in, page_h_in = page_w_mm / 25.4, page_h_mm / 25.4
+    margin_in = 0.4  # ~10mm เผื่อขอบกระดาษ
+
+    with tempfile.NamedTemporaryFile(suffix=".dxf", delete=False) as tmp:
+        tmp.write(dxf_bytes)
+        tmp_path = tmp.name
+    try:
+        doc = ezdxf.readfile(tmp_path)
+    finally:
+        os.unlink(tmp_path)
+
+    msp = doc.modelspace()
+    bbox = extents(msp)
+    draw_w = bbox.extmax.x - bbox.extmin.x
+    draw_h = bbox.extmax.y - bbox.extmin.y
+
+    avail_w = page_w_in - 2 * margin_in
+    avail_h = page_h_in - 2 * margin_in
+    scale = min(avail_w / draw_w, avail_h / draw_h)  # fit to paper
+
+    content_w_in = draw_w * scale
+    content_h_in = draw_h * scale
+    left_in = (page_w_in - content_w_in) / 2   # center พอดี
+    bottom_in = (page_h_in - content_h_in) / 2
+
+    fig = plt.figure(figsize=(page_w_in, page_h_in))  # A3 landscape
+    ax = fig.add_axes([
+        left_in / page_w_in, bottom_in / page_h_in,
+        content_w_in / page_w_in, content_h_in / page_h_in,
+    ])
+
+    ctx = RenderContext(doc)
+    cfg = Configuration(color_policy=ColorPolicy.BLACK, background_policy=BackgroundPolicy.WHITE)  # monochrome
+    backend = MatplotlibBackend(ax)
+    frontend = Frontend(ctx, backend, config=cfg)
+    frontend.draw_layout(msp, finalize=True)
+
+    ax.set_xlim(bbox.extmin.x, bbox.extmax.x)
+    ax.set_ylim(bbox.extmin.y, bbox.extmax.y)
+    ax.axis("off")
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="pdf")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()

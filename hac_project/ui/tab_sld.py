@@ -221,7 +221,6 @@ def render():
     # ── SECTION 4: สร้าง SLD ────────────────────────────────────
     st.divider()
     st.subheader("🏗️ สร้าง Single Line Diagram")
-
     if st.button("🏗️ สร้าง SLD (.dxf)", type="primary", use_container_width=True):
         try:
             feeder_list   = build_feeder_list(attr_state)
@@ -235,6 +234,19 @@ def render():
                 mime="application/octet-stream",
                 use_container_width=True,
             )
+
+            try:
+                pdf_bytes = build_ptu_sldA.export_pdf_from_dxf_bytes(dxf_bytes, paper_size="A3")
+                st.download_button(
+                    label=f"📄 Plot {selected_grp} เป็น PDF (A3, Landscape, Monochrome)",
+                    data=pdf_bytes,
+                    file_name=f"ptu_sld_{grp_key}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+
+            except Exception as e:
+                st.warning(f"⚠️ สร้าง PDF ไม่สำเร็จ (ไฟล์ .dxf ยังใช้ได้ปกติ): {e}")
         except FileNotFoundError:
             st.error("❌ ไม่พบไฟล์ PTU_TEST.dxf — วางไฟล์ไว้ในโฟลเดอร์เดียวกับ app.py")
         except Exception as e:
