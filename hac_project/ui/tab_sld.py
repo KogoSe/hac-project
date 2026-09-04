@@ -168,11 +168,13 @@ def render():
                     unsafe_allow_html=True,
                 )
             with col2:
-                new_val = st.text_input(
+                new_val = st.text_area(
                     label=f"mdbaux_{i}",
                     value=attr_val,
                     key=f"mdbaux_{grp_key}_{i}",
                     label_visibility="collapsed",
+                    height=68,
+                    help="พิมพ์ Enter เพื่อขึ้นบรรทัดใหม่ในแบบ",
                 )
             updated_mdbaux.append((attr_name, new_val))
         attr_state["mdbaux"] = updated_mdbaux
@@ -205,11 +207,13 @@ def render():
                     unsafe_allow_html=True,
                 )
             with col2:
-                new_val = st.text_input(
+                new_val = st.text_area(
                     label=f"spare_{i}",
                     value=attr_val,
                     key=f"spare_{grp_key}_{i}",
                     label_visibility="collapsed",
+                    height=68,
+                    help="พิมพ์ Enter เพื่อขึ้นบรรทัดใหม่ในแบบ",
                 )
             updated_spare.append((attr_name, new_val))
         attr_state["spare"] = updated_spare
