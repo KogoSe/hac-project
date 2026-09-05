@@ -6,9 +6,9 @@ import pandas as pd
 
 from constants import UPS_UNITS, GROUP_BADGE_COLORS
 from engine.pairing import (
-    parse_rack_layout, build_row_units, brute_force_grouping,
-    assign_pairing, compute_normal_loads, compute_fault_loads,
+    parse_rack_layout, build_row_units, compute_normal_loads, compute_fault_loads,
 )
+from engine.optimization import solve_pairing_milp
 from ui.svg_diagram import build_hac_svg
 
 
@@ -30,10 +30,11 @@ def render():
 
     n_groups = st.session_state.get("n_groups", 3)
 
-    # ── ENGINE ───────────────────────────────────────────────────
-    row_units   = build_row_units(edited_df)
-    groups_raw, best_spread = brute_force_grouping(row_units, n_groups)
-    groups      = assign_pairing(groups_raw)
+    # ── ENGINE (MILP: grouping + pairing รวมเป็นโมเดลเดียว, minimize max-fail-load) ──
+    row_units = build_row_units(edited_df)
+    milp_result = solve_pairing_milp(row_units, n_groups)
+    st.session_state.milp_result = milp_result  # ให้ tab_proof.py ใช้ต่อ (ไม่ solve ซ้ำ)
+    groups = milp_result["groups"]
 
     # ── SECTION 1: GROUPING ──────────────────────────────────────
     st.header("1 — การแบ่งกลุ่ม PTU Groups")
@@ -56,7 +57,7 @@ def render():
     cols = st.columns(n_groups + 1)
     for gi, grp in enumerate(groups, 1):
         cols[gi - 1].metric(f"G{gi} Total kW", f"{sum(r['kw'] for r in grp):,.0f}")
-    cols[-1].metric("ส่วนต่าง Max-Min (kW)", f"{best_spread:,.0f}")
+    cols[-1].metric("Max-Fail-Load (MILP)", f"{milp_result['objective']:,.0f} kW", help="ดูรายละเอียด/proof ในแท็บ Optimization Proof")
 
     hac_list = [
         {

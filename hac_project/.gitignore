@@ -3,3 +3,12 @@ __pycache__/
 *.dxf
 .venv/
 venv/
+
+# PuLP/CBC debug artifacts (เกิดเมื่อรันด้วย keepFiles=True ตอน debug solver)
+*.mps
+*.mst
+*.sol
+*.log
+
+# Streamlit local config/secrets (ไม่ควร commit)
+.streamlit/

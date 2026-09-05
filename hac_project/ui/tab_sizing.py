@@ -5,10 +5,7 @@ import streamlit as st
 import pandas as pd
 
 from constants import UPS_UNITS, GROUP_BADGE_COLORS
-from engine.pairing import (
-    parse_rack_layout, build_row_units, brute_force_grouping,
-    assign_pairing, compute_normal_loads, compute_fault_loads,
-)
+from engine.pairing import compute_normal_loads, compute_fault_loads
 from engine.sizing import compute_load_chain, select_equipment, unify_common_sizes, select_it_and_preups_busbar
 
 
@@ -90,16 +87,12 @@ def render():
     # เก็บไว้ให้ tab อื่น (เช่น tab 4 SLD) เรียกใช้ค่า assumption ล่าสุดได้
     st.session_state.sizing_cfg = cfg
 
-    # ── rebuild groups จาก session state (ไม่แตะโค้ดเดิม) ──────
-    edited_df_sz = st.session_state.hac_df.dropna(subset=["HAC Name"]).copy()
-    if "Source Type" not in edited_df_sz.columns:
-        edited_df_sz["Source Type"] = "2-source"
-    edited_df_sz["_rack_list"] = edited_df_sz["Rack Layout (kW)"].apply(parse_rack_layout)
-    edited_df_sz["_row_kw"]    = edited_df_sz["_rack_list"].apply(sum)
-    n_groups_sz  = st.session_state.get("n_groups", 3)
-    row_units_sz = build_row_units(edited_df_sz)
-    groups_raw_sz, _ = brute_force_grouping(row_units_sz, n_groups_sz)
-    groups_sz    = assign_pairing(groups_raw_sz)
+    # ── ใช้ groups จากผล MILP เดียวกับแท็บผลลัพธ์/Proof (ต้องผ่านแท็บผลลัพธ์มาก่อน) ──
+    milp_result_sz = st.session_state.get("milp_result")
+    if milp_result_sz is None:
+        st.info("ไปที่แท็บ **ผลลัพธ์** ก่อนเพื่อรัน MILP optimization")
+        st.stop()
+    groups_sz = milp_result_sz["groups"]
 
     # ── PASS 1: คำนวณ chain + equipment ของทุกกลุ่มก่อน ─────────
     st.divider()
