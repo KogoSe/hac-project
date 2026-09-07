@@ -187,3 +187,7 @@ def render():
     if st.button("🚀 คำนวณ Pairing Optimization", type="primary", use_container_width=True):
         st.session_state.run_optimization = True
         st.success("✅ คำนวณเสร็จแล้ว — เปิดแท็บ ผลลัพธ์ เพื่อดูผล")
+
+
+
+"fdnsjknsjfdnsjlfnkjdsajklsdfas"
