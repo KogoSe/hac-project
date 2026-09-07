@@ -39,6 +39,8 @@ PTU_FIX_DEFAULTS = [
     ("PTU_IF02",              "4000AT 4000AF 4P, ACB LSI (NO)"),
     ("PTU_MAINBUSBAR",        "4000A CU, BUS BAR 100%N, 25%G, 3P 4W"),
     ("PTU_BUSBARBEFOREUPS",   "4000A CU, BUS BAR 100%N, 25%G, 3P 4W"),
+    ("CB_BUSBARBEFOREUPS",    "4000AT 4000AF 4P, ACB LSI (NC)"),
+    ("CB_FROMGEN",            "400AT 400AF 4P, ACB LSI (NO)"),
     ("UPS_RATING",            "2000kW"),
     ("UPS_EOL",               "EOL 10 MINS Li-Ion BATT EOL"),
     ("BATT.",                 "XX"),
