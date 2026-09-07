@@ -15,3 +15,4 @@ venv/
 *.bak
 *.dwl
 *.dwl2
+*.xlsx
