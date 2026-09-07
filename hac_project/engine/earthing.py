@@ -103,14 +103,25 @@ def compute_ground_cable(
 
 def format_groundcable_text(default_text: str, n_sets: int, chosen_size: float) -> str:
     """
-    แทนที่ส่วน 'NxSIZE' ในข้อความ default (เช่น 'IEC01 2x240 Sq.mm. IN PVC %%C80 mm.')
-    ด้วยขนาดที่คำนวณได้ใหม่ คงส่วนอื่น (conduit ⌀ ฯลฯ) ไว้เหมือนเดิมเพราะไม่มีสูตรคำนวณ
-    ถ้าหา pattern ไม่เจอ จะคืนค่า default text เดิม (ให้ผู้ใช้แก้ manual เอง)
+    แทนที่ขนาดสายในข้อความ default ด้วยผลคำนวณใหม่ รองรับ 2 รูปแบบ:
+    1) 'NxSIZE' เช่น TX/GEN/PTU_GROUNDCABLE -> 'IEC01 2x240 Sq.mm. ...'
+    2) เลขเดี่ยวหน้า 'Sq.mm.' เช่น RMU_S_GROUNDCABLE -> 'IEC01 240 Sq.mm. ...'
+       (จะถูกอัปเกรดให้เป็น 'NxSIZE' เหมือนกันเมื่อ n_sets > 1)
+    คงส่วนอื่น (conduit ⌀ ฯลฯ) ไว้เหมือนเดิมเพราะไม่มีสูตรคำนวณ
+    ถ้าหา pattern ไม่เจอเลย จะคืนค่า default text เดิม (ให้ผู้ใช้แก้ manual เอง)
     """
     if chosen_size is None:
         return default_text
-    new_frag = f"{n_sets}x{chosen_size:.0f}"
+    new_frag = f"{n_sets}x{chosen_size:.0f}" if n_sets > 1 else f"{chosen_size:.0f}"
+
+    # ลองรูปแบบ NxSIZE ก่อน (TX/GEN/PTU)
     result, n = re.subn(r"\d+x\d+", new_frag, default_text)
-    if n == 0:
-        return default_text
-    return result
+    if n > 0:
+        return result
+
+    # ถ้าไม่เจอ ลองรูปแบบเลขเดี่ยวหน้า Sq.mm. (RMU)
+    result, n = re.subn(r"\d+(?=\s*Sq\.mm)", new_frag, default_text)
+    if n > 0:
+        return result
+
+    return default_text

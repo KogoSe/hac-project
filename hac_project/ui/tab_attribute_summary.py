@@ -129,6 +129,7 @@ def render():
         "OUPS_CB_ITIF02":      "เดียวกับ it_busbar",
         "OUPS_CB_ITIF03":      "เดียวกับ it_busbar",
         "TX_S_GROUNDCABLE":    "BS 7671 — ดู Section 1 ด้านบน (Ground Cable Sizing)",
+        "RMU_S_GROUNDCABLE":   "BS 7671 — เดียวกับ TX_S_GROUNDCABLE (ผลจาก Section 1 ด้านบน)",
         "GEN_S_GROUNDCABLE":   "BS 7671 — ดู Section 1 ด้านบน (Ground Cable Sizing)",
         "PTU_GROUNDCABLE":     "BS 7671 — ดู Section 1 ด้านบน (Ground Cable Sizing)",
     }
@@ -137,7 +138,7 @@ def render():
     if ground and ground.get("satisfied"):
         from engine.earthing import format_groundcable_text
         default_dict = {n: v for n, v in PTU_FIX_DEFAULTS}
-        for tag in ("TX_S_GROUNDCABLE", "GEN_S_GROUNDCABLE", "PTU_GROUNDCABLE"):
+        for tag in ("RMU_S_GROUNDCABLE", "TX_S_GROUNDCABLE", "GEN_S_GROUNDCABLE", "PTU_GROUNDCABLE"):
             smart_defaults[tag] = format_groundcable_text(default_dict[tag], ground["n_sets"], ground["chosen_size"])
 
     rows = []

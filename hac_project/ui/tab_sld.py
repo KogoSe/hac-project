@@ -108,7 +108,7 @@ def apply_ground_cable_defaults(smart_defaults: dict) -> dict:
     n_sets = ground["n_sets"]
     size   = ground["chosen_size"]
 
-    for tag in ("TX_S_GROUNDCABLE", "GEN_S_GROUNDCABLE", "PTU_GROUNDCABLE"):
+    for tag in ("RMU_S_GROUNDCABLE", "TX_S_GROUNDCABLE", "GEN_S_GROUNDCABLE", "PTU_GROUNDCABLE"):
         smart_defaults[tag] = format_groundcable_text(default_dict[tag], n_sets, size)
 
     return smart_defaults
