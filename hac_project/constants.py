@@ -39,6 +39,7 @@ PTU_FIX_DEFAULTS = [
     ("PTU_IF02",              "4000AT 4000AF 4P, ACB LSI (NO)"),
     ("PTU_MAINBUSBAR",        "4000A CU, BUS BAR 100%N, 25%G, 3P 4W"),
     ("PTU_BUSBARBEFOREUPS",   "4000A CU, BUS BAR 100%N, 25%G, 3P 4W"),
+    ("PTU_GROUNDCABLE",       "IEC01 2x240 Sq.mm. IN PVC %%C80 mm."),
     ("CB_BUSBARBEFOREUPS",    "4000AT 4000AF 4P, ACB LSI (NC)"),
     ("CB_FROMGEN",            "400AT 400AF 4P, ACB LSI (NO)"),
     ("UPS_RATING",            "2000kW"),

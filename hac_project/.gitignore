@@ -12,3 +12,6 @@ venv/
 
 # Streamlit local config/secrets (ไม่ควร commit)
 .streamlit/
+*.bak
+*.dwl
+*.dwl2
