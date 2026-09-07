@@ -19,7 +19,7 @@ from constants import UPS_UNITS
 
 PAIRS = ["AB", "AC", "AD", "BC", "BD", "CD"]
 EPS_TIE_BREAK = 1e-5
-DEFAULT_TIME_LIMIT = 60
+DEFAULT_TIME_LIMIT = 120
 DEFAULT_GAP_REL = 0.01
 
 
