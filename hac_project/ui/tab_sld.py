@@ -83,7 +83,35 @@ def compute_smart_ptu_fix_defaults() -> dict:
         "OUPS_CB_ITIF01":      f"{it_a:.0f}AT\n{it_a:.0f}AF\n4P, ACB\nLSI (NO)",
         "OUPS_CB_ITIF02":      f"{it_a:.0f}AT\n{it_a:.0f}AF\nTPN, ACB\nLSI (NC)",
         "OUPS_CB_ITIF03":      f"{it_a:.0f}AT\n{it_a:.0f}AF\nTPN,ACB,\nLSI (NO)",
+
+        # CB_BUSBARBEFOREUPS = เท่ากับ before_ups_busbar (ยืนยันโดยผู้ใช้: เลือกเท่า CB ของ busbar เดียวกัน)
+        "CB_BUSBARBEFOREUPS":  f"{preups_a:.0f}AT\n{preups_a:.0f}AF\n4P, ACB\nLSI (NC)",
+        # CB_FROMGEN = เท่ากับ busway ของ Generator (ยืนยันโดยผู้ใช้)
+        "CB_FROMGEN":          f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NO)",
     }
+
+
+def apply_ground_cable_defaults(smart_defaults: dict) -> dict:
+    """
+    เติมค่า TX/GEN/PTU_GROUNDCABLE เข้า smart_defaults ถ้ามีผลคำนวณจาก
+    tab สรุป Attribute Calculation (st.session_state.ground_result) แล้ว
+    ไม่กระทบ logic เดิมถ้ายังไม่เคยเปิด tab นั้น (fallback เป็น default เดิม)
+    """
+    ground = st.session_state.get("ground_result")
+    if not ground or not ground.get("satisfied"):
+        return smart_defaults
+
+    from constants import PTU_FIX_DEFAULTS
+    from engine.earthing import format_groundcable_text
+
+    default_dict = {name: val for name, val in PTU_FIX_DEFAULTS}
+    n_sets = ground["n_sets"]
+    size   = ground["chosen_size"]
+
+    for tag in ("TX_S_GROUNDCABLE", "GEN_S_GROUNDCABLE", "PTU_GROUNDCABLE"):
+        smart_defaults[tag] = format_groundcable_text(default_dict[tag], n_sets, size)
+
+    return smart_defaults
 
 def render():
     st.header("📐 SLD Attributes")
@@ -101,7 +129,8 @@ def render():
 
     if grp_key not in st.session_state.sld_attrs:
         # init ด้วย default values
-        smart_defaults = compute_smart_ptu_fix_defaults()  
+        smart_defaults = compute_smart_ptu_fix_defaults()
+        smart_defaults = apply_ground_cable_defaults(smart_defaults)
         st.session_state.sld_attrs[grp_key] = {
             "ptu_fix":  [(name, smart_defaults.get(name, val)) for name, val in PTU_FIX_DEFAULTS],  # ← แก้บรรทัดนี้
             "mdbaux_count": 1,
