@@ -11,6 +11,124 @@ from engine.pairing import (
 from engine.optimization import solve_pairing_milp
 from ui.svg_diagram import build_hac_svg
 
+# ── สีสำหรับตาราง Load Breakdown ─────────────────────────────
+SCENARIO_HEADER_COLOR = {
+    "Normal": "#F1F5F9",
+    "A": "#DBEAFE",
+    "B": "#DCFCE7",
+    "C": "#FEF3C7",
+    "D": "#F3E8FF",
+}
+SCENARIO_BORDER_COLOR = {
+    "Normal": "#94A3B8",
+    "A": "#3B82F6",
+    "B": "#22C55E",
+    "C": "#F59E0B",
+    "D": "#A855F7",
+}
+FAIL_BG = "#FEE2E2"
+FAIL_TEXT = "#DC2626"
+MAX_HIGHLIGHT_BG = "#FDE68A"
+
+
+def build_load_breakdown_table(grp: list[dict]) -> str:
+    """สร้าง HTML table แสดง load แต่ละแถวต่อ UPS ทุก scenario (Normal + Fault ทีละตัว)"""
+    scenarios = ["Normal"] + UPS_UNITS  # ["Normal","A","B","C","D"]
+
+    row_labels = []
+    values = []  # list of {scenario: {unit: float|None|"FAIL"}}
+    totals = {sc: {u: 0.0 for u in UPS_UNITS} for sc in scenarios}
+
+    for row in grp:
+        row_labels.append((row["hac"], row["side"], row["kw"]))
+        row_vals = {}
+
+        n = compute_normal_loads([row])
+        row_vals["Normal"] = {u: (n[u] if n[u] else None) for u in UPS_UNITS}
+        for u in UPS_UNITS:
+            totals["Normal"][u] += n[u]
+
+        for faulted in UPS_UNITS:
+            f = compute_fault_loads([row], faulted)
+            sc_vals = {}
+            for u in UPS_UNITS:
+                if u == faulted:
+                    sc_vals[u] = "FAIL"
+                else:
+                    val = f.get(u, 0.0)
+                    sc_vals[u] = val if val else None
+                    totals[faulted][u] += val
+            row_vals[faulted] = sc_vals
+        values.append(row_vals)
+
+    # หา max ต่อ scenario (จาก total) สำหรับไฮไลท์
+    max_per_scenario = {
+        sc: (max([v for v in totals[sc].values() if v], default=None))
+        for sc in scenarios
+    }
+
+    html = ['<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:13px;width:100%">']
+
+    # Header แถว 1 — ชื่อ scenario
+    html.append("<tr>")
+    html.append('<th style="padding:6px 10px;background:#E2E8F0;border:1px solid #CBD5E1">HAC</th>')
+    html.append('<th style="padding:6px 10px;background:#E2E8F0;border:1px solid #CBD5E1">แถว</th>')
+    html.append('<th style="padding:6px 10px;background:#E2E8F0;border:1px solid #CBD5E1">kW</th>')
+    for sc in scenarios:
+        label = "Normal" if sc == "Normal" else f"{sc} Fail"
+        border, bg = SCENARIO_BORDER_COLOR[sc], SCENARIO_HEADER_COLOR[sc]
+        html.append(
+            f'<th colspan="4" style="padding:6px 10px;background:{bg};'
+            f'border:1px solid #CBD5E1;border-left:4px solid {border};text-align:center">{label}</th>'
+        )
+    html.append("</tr>")
+
+    # Header แถว 2 — A B C D
+    html.append("<tr>")
+    html.append('<th style="border:1px solid #CBD5E1;background:#F8FAFC"></th>' * 3)
+    for sc in scenarios:
+        border = SCENARIO_BORDER_COLOR[sc]
+        for i, u in enumerate(UPS_UNITS):
+            lb = f"border-left:4px solid {border};" if i == 0 else ""
+            html.append(f'<th style="padding:4px 8px;background:#F8FAFC;border:1px solid #CBD5E1;{lb}">{u}</th>')
+    html.append("</tr>")
+
+    # Data rows
+    for (hac, side, kw), row_vals in zip(row_labels, values):
+        html.append("<tr>")
+        html.append(f'<td style="padding:5px 10px;border:1px solid #E2E8F0">{hac}</td>')
+        html.append(f'<td style="padding:5px 10px;border:1px solid #E2E8F0">{side}</td>')
+        html.append(f'<td style="padding:5px 10px;border:1px solid #E2E8F0;text-align:right">{kw:,.0f}</td>')
+        for sc in scenarios:
+            border = SCENARIO_BORDER_COLOR[sc]
+            for i, u in enumerate(UPS_UNITS):
+                val = row_vals[sc][u]
+                lb = f"border-left:4px solid {border};" if i == 0 else ""
+                if val == "FAIL":
+                    html.append(f'<td style="padding:5px 8px;border:1px solid #E2E8F0;{lb}background:{FAIL_BG};color:{FAIL_TEXT};font-weight:700;text-align:center">FAIL</td>')
+                elif val is None:
+                    html.append(f'<td style="padding:5px 8px;border:1px solid #E2E8F0;{lb}"></td>')
+                else:
+                    html.append(f'<td style="padding:5px 8px;border:1px solid #E2E8F0;{lb}text-align:right">{val:,.0f}</td>')
+        html.append("</tr>")
+
+    # Total row
+    html.append('<tr style="background:#F1F5F9;font-weight:700">')
+    html.append('<td colspan="3" style="padding:6px 10px;border:1px solid #CBD5E1">Total Power Consumption</td>')
+    for sc in scenarios:
+        border = SCENARIO_BORDER_COLOR[sc]
+        for i, u in enumerate(UPS_UNITS):
+            lb = f"border-left:4px solid {border};" if i == 0 else ""
+            total_val = totals[sc][u]
+            is_max = max_per_scenario[sc] is not None and total_val == max_per_scenario[sc] and total_val > 0
+            bg = f"background:{MAX_HIGHLIGHT_BG};" if is_max else ""
+            display = f"{total_val:,.0f}" if total_val else ""
+            html.append(f'<td style="padding:6px 8px;border:1px solid #CBD5E1;{lb}{bg}text-align:right">{display}</td>')
+    html.append("</tr>")
+
+    html.append("</table></div>")
+    return "".join(html)
+
 
 def render():
     edited_df = st.session_state.hac_df.dropna(subset=["HAC Name"]).copy()
@@ -138,38 +256,13 @@ def render():
         st.dataframe(pd.DataFrame(fault_rows), use_container_width=True, hide_index=True)
         group_max_faults.append({"กลุ่ม": f"Group{gi}", "Max Fault Load (kW)": grp_max})
 
-        # ── SECTION 4.5: DETAILED LOAD BREAKDOWN ต่อแถว (ทุก scenario) ─────
+    # ── SECTION 4.5: DETAILED LOAD BREAKDOWN ต่อแถว (ทุก scenario) ─────
     st.header("4.5 — รายละเอียด Load แต่ละแถวต่อ UPS (ทุก Scenario)")
-    st.caption("แสดงว่าแต่ละแถวจ่าย load ไปยัง UPS ตัวไหนเท่าไหร่ ทั้ง Normal และทุก Fault Case (kW)")
+    st.caption("🔴 แดง = UPS ที่ fail | เส้นสี = แบ่งกลุ่ม scenario | 🟡 เหลือง = จุดโหลดสูงสุดในแต่ละ scenario")
 
     for gi, grp in enumerate(groups, 1):
-        color = GROUP_BADGE_COLORS[(gi - 1) % len(GROUP_BADGE_COLORS)]
         with st.expander(f"📋 PTU Group {gi} — Load Breakdown", expanded=False):
-            detail_rows = []
-            for row in grp:
-                row_out = {
-                    "HAC": row["hac"],
-                    "แถว": row["side"],
-                    "kW":  f"{row['kw']:,.0f}",
-                }
-                # Normal
-                n = compute_normal_loads([row])
-                for u in UPS_UNITS:
-                    row_out[f"Normal {u}"] = f"{n[u]:,.0f}" if n[u] else "—"
-
-                # Fault ทีละตัว (loop UPS_UNITS เป็น faulted)
-                for faulted in UPS_UNITS:
-                    f = compute_fault_loads([row], faulted)
-                    for u in UPS_UNITS:
-                        if u == faulted:
-                            row_out[f"{faulted} Fail → {u}"] = "FAIL"
-                        else:
-                            val = f.get(u, 0.0)
-                            row_out[f"{faulted} Fail → {u}"] = f"{val:,.0f}" if val else "—"
-
-                detail_rows.append(row_out)
-
-            st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+            st.markdown(build_load_breakdown_table(grp), unsafe_allow_html=True)
 
     # ── SECTION 5: SUMMARY ───────────────────────────────────────
     st.header("5 — สรุป Max Load When Fault Condition ทุกกลุ่ม")
