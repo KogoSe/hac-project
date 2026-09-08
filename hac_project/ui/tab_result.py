@@ -138,6 +138,39 @@ def render():
         st.dataframe(pd.DataFrame(fault_rows), use_container_width=True, hide_index=True)
         group_max_faults.append({"กลุ่ม": f"Group{gi}", "Max Fault Load (kW)": grp_max})
 
+        # ── SECTION 4.5: DETAILED LOAD BREAKDOWN ต่อแถว (ทุก scenario) ─────
+    st.header("4.5 — รายละเอียด Load แต่ละแถวต่อ UPS (ทุก Scenario)")
+    st.caption("แสดงว่าแต่ละแถวจ่าย load ไปยัง UPS ตัวไหนเท่าไหร่ ทั้ง Normal และทุก Fault Case (kW)")
+
+    for gi, grp in enumerate(groups, 1):
+        color = GROUP_BADGE_COLORS[(gi - 1) % len(GROUP_BADGE_COLORS)]
+        with st.expander(f"📋 PTU Group {gi} — Load Breakdown", expanded=False):
+            detail_rows = []
+            for row in grp:
+                row_out = {
+                    "HAC": row["hac"],
+                    "แถว": row["side"],
+                    "kW":  f"{row['kw']:,.0f}",
+                }
+                # Normal
+                n = compute_normal_loads([row])
+                for u in UPS_UNITS:
+                    row_out[f"Normal {u}"] = f"{n[u]:,.0f}" if n[u] else "—"
+
+                # Fault ทีละตัว (loop UPS_UNITS เป็น faulted)
+                for faulted in UPS_UNITS:
+                    f = compute_fault_loads([row], faulted)
+                    for u in UPS_UNITS:
+                        if u == faulted:
+                            row_out[f"{faulted} Fail → {u}"] = "FAIL"
+                        else:
+                            val = f.get(u, 0.0)
+                            row_out[f"{faulted} Fail → {u}"] = f"{val:,.0f}" if val else "—"
+
+                detail_rows.append(row_out)
+
+            st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+
     # ── SECTION 5: SUMMARY ───────────────────────────────────────
     st.header("5 — สรุป Max Load When Fault Condition ทุกกลุ่ม")
     st.caption("ใช้เป็นฐานคำนวณขนาด Generator / Transformer / Busbar")
