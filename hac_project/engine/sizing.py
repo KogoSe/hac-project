@@ -156,3 +156,31 @@ def select_it_and_preups_busbar(chain: dict, cfg: dict) -> dict:
         "it_busbar":         {"size": it_size,  "unit": "A", "load": it_amp,  "util": it_util},
         "before_ups_busbar": {"size": pre_size, "unit": "A", "load": pre_amp, "util": pre_util},
     }
+
+
+def select_gen_busbar(gen_kw: float, gen_pf: float, cfg: dict) -> dict:
+    """
+    เลือกขนาด Busbar ของ Generator จาก "กระแส rated ของเครื่องกำเนิดเอง" ตรงๆ
+    (ไม่ใช่ busway design ampere ของ PTU เหมือนที่เคยใช้)
+
+    ยืนยันโดยผู้ใช้ (2026-09): จุดนี้ "ไม่เผื่อ Design Margin" เหมือนจุดอื่นในระบบ
+    เพราะเป็น busbar ติดกับตัวเครื่องกำเนิดเอง ไม่ใช่สาย feeder ที่ต้องเผื่อระยะเดินสาย
+    — เลือก standard size ตัวถัดไปที่ >= i_rated เสมอ (round up ตาม select_standard_size ปกติ)
+    ในอนาคตอาจเพิ่ม tolerance แบบ "ใกล้พอให้เลือก size รองได้" (เช่น 4200A ยังเลือก 4000A ได้)
+    — ยังไม่ implement ตรงนี้ รอคุยรายละเอียดก่อน
+
+    gen_kw : ขนาด Generator ที่เลือกได้แล้ว (common size ทุกกลุ่ม, kW)
+    gen_pf : Power Factor ของเครื่องกำเนิด — ใช้ค่าเดียวกับที่กรอกใน tab สรุป Attribute
+             (Ground Cable Assumption) ไม่ hardcode แยกอีกต่อไป (sync กับ GEN_S_RATING ด้วย)
+    cfg    : ใช้ voltage / busway_sizes ชุดเดียวกับจุดอื่นในระบบ (ไม่ใช้ design_margin แล้ว)
+    GEN_LEFT_ACB / GEN_RIGHT_ACB ใช้ size จากฟังก์ชันนี้ต่อ (AT=AF เท่า busbar)
+    """
+    voltage = cfg["voltage"]
+
+    gen_kva = gen_kw / gen_pf if gen_pf else 0.0
+    i_rated = (gen_kva * 1000) / (1.732 * voltage)
+
+    size = select_standard_size(i_rated, cfg["busway_sizes"])
+    util = i_rated / size if size else None
+
+    return {"size": size, "unit": "A", "load": i_rated, "util": util, "i_rated": i_rated}

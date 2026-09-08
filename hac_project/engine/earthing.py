@@ -2,11 +2,12 @@
 ENGINE — Earthing / Ground Cable Sizing (BS 7671, Table 43A: S = I*sqrt(t)/k)
 แยกออกจาก UI ชัดเจน ไม่มี st. ใดๆ ในไฟล์นี้
 
-หลักการ (ตามที่ตกลงกันไว้):
-- ใช้ kVA ตัวที่ "มากกว่า" ระหว่าง Transformer กับ Generator (แปลง kW→kVA ด้วย gen_pf)
-  มาเป็นฐานคำนวณ Fault Level เดียว แล้วใช้ผลลัพธ์เดียวกันกับทั้ง 3 จุด
-  (TX_S_GROUNDCABLE, GEN_S_GROUNDCABLE, PTU_GROUNDCABLE)
-- Fault Level (Ik) มาจาก %Z ของหม้อแปลง/เครื่องกำเนิด (ไม่ใช้ network impedance เต็มรูปแบบ)
+หลักการ (แก้ไข 2026-09 — ยืนยันโดยผู้ใช้):
+- ไม่ใช้ฐานคำนวณเดียว (max ของ Trafo/Gen) แบบเดิมอีกต่อไป
+- แยกคำนวณ 2 ฐานอิสระกัน:
+    - ฐาน Transformer (trafo_kva) → ใช้กับ RMU_S_GROUNDCABLE, TX_S_GROUNDCABLE
+    - ฐาน Generator (gen_kw/gen_pf → kVA) → ใช้กับ GEN_S_GROUNDCABLE, PTU_GROUNDCABLE
+- Fault Level (Ik) ของแต่ละฐาน มาจาก %Z ของอุปกรณ์ตัวนั้นเอง (ไม่ใช้ network impedance เต็มรูปแบบ)
 """
 import re
 import math
@@ -40,10 +41,9 @@ def compute_fault_level_ka(kva: float, voltage: float, pct_z: float) -> float:
     return ik_a / 1000
 
 
-def compute_ground_cable(
-    trafo_kva: float,
-    gen_kw: float,
-    gen_pf: float,
+def _compute_ground_cable_single(
+    base_kva: float,
+    base_label: str,
     voltage: float,
     pct_z: float,
     fault_margin_pct: float,
@@ -52,15 +52,8 @@ def compute_ground_cable(
     cable_sizes: list,
     n_sets: int,
 ) -> dict:
-    """
-    คำนวณขนาดสายดินตาม BS 7671 (S = I*sqrt(t)/k)
-    ใช้ค่า kVA ที่มากกว่าระหว่าง Transformer กับ Generator (แปลงเป็น kVA เดียวกัน) เป็นฐาน
-    คืน dict step-by-step + ผลลัพธ์สุดท้าย (ใช้ทั้งแสดงผลและ auto-fill)
-    """
-    gen_kva_equiv = gen_kw / gen_pf if gen_pf else 0.0
-    base_kva = max(trafo_kva, gen_kva_equiv)
-    base_source = "Transformer" if trafo_kva >= gen_kva_equiv else "Generator"
-
+    """คำนวณขนาดสายดินตาม BS 7671 (S = I*sqrt(t)/k) จากฐานคำนวณเดียว (base_kva)
+    ใช้เป็น helper ภายในเท่านั้น — เรียกผ่าน compute_ground_cable_dual()"""
     i_rated = compute_full_load_current(base_kva, voltage)
     ik_ka = i_rated / (pct_z / 100) / 1000
     i_avg_a = ik_ka * 1000 * (1 + fault_margin_pct / 100)
@@ -72,8 +65,7 @@ def compute_ground_cable(
     satisfied = chosen_size is not None
 
     steps = [
-        {"step": "1", "desc": f"ฐานคำนวณ = max(Trafo kVA, Gen kW/pf) → ใช้ {base_source}",
-         "value": f"{base_kva:,.1f} kVA"},
+        {"step": "1", "desc": f"ฐานคำนวณ = {base_label} kVA", "value": f"{base_kva:,.1f} kVA"},
         {"step": "2", "desc": "I_rated = kVA×1000 / (√3 × V)", "value": f"{i_rated:,.1f} A"},
         {"step": "3", "desc": f"Fault Level, Ik = I_rated / (%Z/100)  [%Z={pct_z:.1f}%]",
          "value": f"{ik_ka:,.2f} kA"},
@@ -88,7 +80,7 @@ def compute_ground_cable(
 
     return {
         "base_kva": base_kva,
-        "base_source": base_source,
+        "base_source": base_label,
         "i_rated_a": i_rated,
         "ik_ka": ik_ka,
         "i_avg_a": i_avg_a,
@@ -99,6 +91,37 @@ def compute_ground_cable(
         "satisfied": satisfied,
         "steps": steps,
     }
+
+
+def compute_ground_cable_dual(
+    trafo_kva: float,
+    gen_kw: float,
+    gen_pf: float,
+    voltage: float,
+    pct_z: float,
+    fault_margin_pct: float,
+    fault_duration_sec: float,
+    k_value: float,
+    cable_sizes: list,
+    n_sets: int,
+) -> dict:
+    """
+    คำนวณขนาดสายดิน BS 7671 แยก 2 ฐาน (ยืนยันโดยผู้ใช้ 2026-09 — เดิมเคยใช้ฐานเดียว max(trafo,gen)):
+    - "trafo": ใช้ฐาน Transformer kVA → สำหรับ RMU_S_GROUNDCABLE, TX_S_GROUNDCABLE
+    - "gen"  : ใช้ฐาน Generator kW/pf (แปลงเป็น kVA) → สำหรับ GEN_S_GROUNDCABLE, PTU_GROUNDCABLE
+    คืน {"trafo": {...ผลลัพธ์เดี่ยว...}, "gen": {...ผลลัพธ์เดี่ยว...}}
+    """
+    gen_kva_equiv = gen_kw / gen_pf if gen_pf else 0.0
+
+    trafo_result = _compute_ground_cable_single(
+        trafo_kva, "Transformer", voltage, pct_z, fault_margin_pct,
+        fault_duration_sec, k_value, cable_sizes, n_sets,
+    )
+    gen_result = _compute_ground_cable_single(
+        gen_kva_equiv, "Generator", voltage, pct_z, fault_margin_pct,
+        fault_duration_sec, k_value, cable_sizes, n_sets,
+    )
+    return {"trafo": trafo_result, "gen": gen_result}
 
 
 def format_groundcable_text(default_text: str, n_sets: int, chosen_size: float) -> str:

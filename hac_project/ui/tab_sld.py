@@ -6,13 +6,18 @@ TAB 4: SLD ATTRIBUTES — กรอก/แก้ไข Attribute แล้วส
 attributes) ให้อ่านจาก:
     st.session_state.sizing_cfg           -> assumption/config ล่าสุด
     st.session_state.sizing_group_calcs   -> list ของ {"gi", "chain", "equip"} ต่อกลุ่ม
-    st.session_state.sizing_common_sizes  -> {"ups":.., "gen":.., "trafo":.., "busway":..}
+    st.session_state.sizing_common_sizes  -> {"ups":.., "gen":.., "trafo":.., "busway":.., "it_busbar":.., "before_ups_busbar":..}
 ทั้งหมดนี้ถูก set ไว้แล้วตอน render ของ ui/tab_sizing.py (ต้องเปิด tab 3 ก่อนอย่างน้อย 1 ครั้ง
 ในเซสชันนั้น ค่าถึงจะมี — ควร guard ด้วย st.session_state.get(...) เสมอ)
+
+gen_pf (Generator PF สำหรับแปลง kW→kVA) sync กับ tab "สรุปการคำนวณ Attribute"
+(ui/tab_attribute_summary.py) แล้ว — อ่านจาก st.session_state.ground_cfg["gen_pf"]
+ไม่ hardcode แยกอีกต่อไป (ดู compute_smart_ptu_fix_defaults ด้านล่าง)
 """
 import streamlit as st
 
 from constants import PTU_FIX_DEFAULTS, MDBAUX_DEFAULTS, SPARE_DEFAULTS
+from engine.sizing import select_gen_busbar
 
 import build_ptu_sldA
 
@@ -52,10 +57,26 @@ def compute_smart_ptu_fix_defaults() -> dict:
     it_a     = sizes["it_busbar"]
     preups_a = sizes["before_ups_busbar"]
 
-    GEN_PF_ASSUMED = 0.8  # ⚠️ สมมติ pf ของ Genset — แก้ manual ทีหลังได้ถ้าไม่ตรง spec
+    # gen_pf: ยึดตาม input ที่ผู้ใช้กรอกจริงใน tab "สรุปการคำนวณ Attribute" (หัวข้อ Ground Cable Assumption)
+    # ไม่ hardcode แยกอีกต่อไป (เดิมเคยใช้ GEN_PF_ASSUMED = 0.8 คนละตัวกับ ground cable — ทำให้ไม่ sync กัน)
+    # ถ้ายังไม่เคยเปิด tab สรุปฯ ในเซสชันนี้เลย fallback = 0.8 ไปก่อน
+    GEN_PF_FALLBACK = 0.8
+    gen_pf = st.session_state.get("ground_cfg", {}).get("gen_pf", GEN_PF_FALLBACK)
+
     trafo_mva = trafo_kva / 1000
     gen_mw    = gen_kw / 1000
-    gen_mva   = gen_mw / GEN_PF_ASSUMED
+    gen_mva   = gen_mw / gen_pf
+
+    # GEN_S_BUSBARRATING / GEN_LEFT_ACB / GEN_RIGHT_ACB: คำนวณจากกระแส rated ของ Generator เอง
+    # (ไม่ใช่ busway design ampere ของ PTU เหมือนเดิม) — ไม่เผื่อ Design Margin (ยืนยันโดยผู้ใช้)
+    # เลือก standard size ตัวถัดไปที่ >= rated เสมอ — ใช้ voltage/busway_sizes ชุดเดียวกับจุดอื่นในระบบ
+    sizing_cfg = st.session_state.get("sizing_cfg", {})
+    gen_busbar_cfg = {
+        "voltage":      sizing_cfg.get("voltage", 415.0),
+        "busway_sizes": sizing_cfg.get("busway_sizes", [800, 1600, 2000, 2500, 3200, 4000, 5000]),
+    }
+    gen_busbar = select_gen_busbar(gen_kw, gen_pf, gen_busbar_cfg)
+    gen_busbar_a = gen_busbar["size"] if gen_busbar["size"] is not None else busway_a
 
     return {
         "UPS_RATING":          f"{ups_kw:.0f}kW",
@@ -65,11 +86,11 @@ def compute_smart_ptu_fix_defaults() -> dict:
         "TX_S_BUSWAY":         f"{busway_a:.0f}A BUSWAY AL. IP 55 (BY PTU)",
         "GEN_S_BASWAYTOPTU":   f"{busway_a:.0f}A BUSWAY AL. IP 68",
         "PTU_MAINBUSBAR":      f"{busway_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
-        "GEN_S_BUSBARRATING":  f"{busway_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
+        "GEN_S_BUSBARRATING":  f"{gen_busbar_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
         "PTU_IF01":            f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NC)",
         "PTU_IF02":            f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NO)",
-        "GEN_LEFT_ACB":        f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB,\nLSI (NC)",
-        "GEN_RIGHT_ACB":       f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB,\nLSI (NO)",
+        "GEN_LEFT_ACB":        f"{gen_busbar_a:.0f}AT\n{gen_busbar_a:.0f}AF\n4P, ACB,\nLSI (NC)",
+        "GEN_RIGHT_ACB":       f"{gen_busbar_a:.0f}AT\n{gen_busbar_a:.0f}AF\n4P, ACB,\nLSI (NO)",
 
         "PTU_BUSBARBEFOREUPS": f"{preups_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
 
@@ -93,23 +114,32 @@ def compute_smart_ptu_fix_defaults() -> dict:
 
 def apply_ground_cable_defaults(smart_defaults: dict) -> dict:
     """
-    เติมค่า TX/GEN/PTU_GROUNDCABLE เข้า smart_defaults ถ้ามีผลคำนวณจาก
-    tab สรุป Attribute Calculation (st.session_state.ground_result) แล้ว
-    ไม่กระทบ logic เดิมถ้ายังไม่เคยเปิด tab นั้น (fallback เป็น default เดิม)
+    เติมค่า ground cable เข้า smart_defaults จากผลคำนวณ 2 ฐานแยกกัน
+    (st.session_state.ground_result = {"trafo": {...}, "gen": {...}}):
+    - ฐาน Transformer -> RMU_S_GROUNDCABLE, TX_S_GROUNDCABLE
+    - ฐาน Generator   -> GEN_S_GROUNDCABLE, PTU_GROUNDCABLE
+    ไม่กระทบ logic เดิมถ้ายังไม่เคยเปิด tab สรุป Attribute Calculation (fallback เป็น default เดิม)
     """
     ground = st.session_state.get("ground_result")
-    if not ground or not ground.get("satisfied"):
+    if not ground:
         return smart_defaults
 
     from constants import PTU_FIX_DEFAULTS
     from engine.earthing import format_groundcable_text
 
     default_dict = {name: val for name, val in PTU_FIX_DEFAULTS}
-    n_sets = ground["n_sets"]
-    size   = ground["chosen_size"]
 
-    for tag in ("RMU_S_GROUNDCABLE", "TX_S_GROUNDCABLE", "GEN_S_GROUNDCABLE", "PTU_GROUNDCABLE"):
-        smart_defaults[tag] = format_groundcable_text(default_dict[tag], n_sets, size)
+    trafo_res = ground.get("trafo", {})
+    if trafo_res.get("satisfied"):
+        for tag in ("RMU_S_GROUNDCABLE", "TX_S_GROUNDCABLE"):
+            smart_defaults[tag] = format_groundcable_text(
+                default_dict[tag], trafo_res["n_sets"], trafo_res["chosen_size"])
+
+    gen_res = ground.get("gen", {})
+    if gen_res.get("satisfied"):
+        for tag in ("GEN_S_GROUNDCABLE", "PTU_GROUNDCABLE"):
+            smart_defaults[tag] = format_groundcable_text(
+                default_dict[tag], gen_res["n_sets"], gen_res["chosen_size"])
 
     return smart_defaults
 
@@ -141,6 +171,12 @@ def render():
         }
         if not smart_defaults:                                    # ← เพิ่มตรงนี้ ย่อเท่ากับบรรทัดบน
             st.info("ℹ️ ยังไม่พบผลคำนวณจาก tab Equipment Sizing — ใช้ค่า default พื้นฐานไปก่อน (เปิด tab 3 ก่อนแล้วกลับมาที่นี่ใหม่เพื่อ auto-fill)")
+        elif "ground_cfg" not in st.session_state:
+            st.caption(
+                "⚠️ ยังไม่เคยเปิด tab 'สรุปการคำนวณ Attribute' ในเซสชันนี้ — ใช้ Generator PF=0.80 "
+                "(ค่าเริ่มต้น) ไปก่อนสำหรับ GEN_S_RATING/GEN_S_BUSBARRATING/ACB ถ้าต้องการเปลี่ยน PF "
+                "ให้ไปตั้งค่าที่ tab นั้นก่อน แล้วลบกลุ่มนี้ทิ้งเพื่อดึงค่าใหม่"
+            )
 
     attr_state = st.session_state.sld_attrs[grp_key]
 
