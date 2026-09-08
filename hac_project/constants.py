@@ -23,6 +23,7 @@ PTU_FIX_DEFAULTS = [
     ("RMU_RIGHT_FROMMV",      "FROM MV.SWG.XX"),
     ("RMU_LEFT_CB",           "630"),
     ("RMU_RIGHT_LB",          "630"),
+    ("RMU_BUSBAR",            "CU BUSBAR 630A"),
     ("RMU_CB",                "200"),
     ("RMU_S_GROUNDCABLE",     "IEC01 240 Sq.mm. IN PVC %%C50 mm."),
     ("TX_S_RATING",           "2.25 MVA DRY TYPE (IP00) 22/0.4 kV, K-4 RATED"),
