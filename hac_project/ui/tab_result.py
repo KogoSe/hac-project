@@ -231,36 +231,19 @@ def render():
         })
     st.dataframe(pd.DataFrame(norm_rows), use_container_width=True, hide_index=True)
 
-    # ── SECTION 4: FAULT SIMULATION ──────────────────────────────
+    # ── SECTION 4: FAILURE CONDITIONS — Load Breakdown ───────────
     st.header("4 — Failure Conditions")
-    group_max_faults = []
-    for gi, grp in enumerate(groups, 1):
-        color = GROUP_BADGE_COLORS[(gi - 1) % len(GROUP_BADGE_COLORS)]
-        st.markdown(
-            f'<div style="background:{color};padding:6px 14px;border-radius:6px;'
-            f'font-weight:700;margin-bottom:6px">PTU Group {gi}</div>',
-            unsafe_allow_html=True,
-        )
-        fault_rows = []
-        grp_max    = 0.0
-        for faulted in UPS_UNITS:
-            loads   = compute_fault_loads(grp, faulted)
-            mx_ups  = max(loads, key=loads.get)
-            mx_val  = loads[mx_ups]
-            grp_max = max(grp_max, mx_val)
-            row_out = {"UPS พัง ⚡": faulted}
-            for u in UPS_UNITS:
-                row_out[f"UPS {u} (kW)"] = "FAIL" if u == faulted else f"{loads[u]:,.0f}"
-            row_out["Max Load"] = f"{mx_ups} = {mx_val:,.0f} kW"
-            fault_rows.append(row_out)
-        st.dataframe(pd.DataFrame(fault_rows), use_container_width=True, hide_index=True)
-        group_max_faults.append({"กลุ่ม": f"Group{gi}", "Max Fault Load (kW)": grp_max})
-
-    # ── SECTION 4.5: DETAILED LOAD BREAKDOWN ต่อแถว (ทุก scenario) ─────
-    st.header("4.5 — รายละเอียด Load แต่ละแถวต่อ UPS (ทุก Scenario)")
     st.caption("🔴 แดง = UPS ที่ fail | เส้นสี = แบ่งกลุ่ม scenario | 🟡 เหลือง = จุดโหลดสูงสุดในแต่ละ scenario")
 
+    group_max_faults = []
     for gi, grp in enumerate(groups, 1):
+        # คำนวณ max fault load ของกลุ่ม (ใช้ต่อใน Section 5)
+        grp_max = 0.0
+        for faulted in UPS_UNITS:
+            loads = compute_fault_loads(grp, faulted)
+            grp_max = max(grp_max, max(loads.values()))
+        group_max_faults.append({"กลุ่ม": f"Group{gi}", "Max Fault Load (kW)": grp_max})
+
         with st.expander(f"📋 PTU Group {gi} — Load Breakdown", expanded=False):
             st.markdown(build_load_breakdown_table(grp), unsafe_allow_html=True)
 
