@@ -7,6 +7,7 @@ import pandas as pd
 from constants import UPS_UNITS, GROUP_BADGE_COLORS
 from engine.pairing import compute_normal_loads, compute_fault_loads
 from engine.sizing import compute_load_chain, select_equipment, unify_common_sizes, select_it_and_preups_busbar
+from engine.excel_export import build_excel_report
 
 
 def util_bar_html(util: float | None, threshold: float) -> str:
@@ -223,4 +224,20 @@ def render():
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
 
 #เชื่อมระบบ
+        # ── SECTION: Export Excel Report ────────────────────────────
+    st.divider()
+    st.subheader("📥 Export Excel Report")
+    st.caption("สร้างไฟล์ .xlsx ตามโครงสร้าง Load Calculation + Summary (ตาม template อ้างอิง)")
+
+    excel_bytes = build_excel_report(
+        groups=groups_sz,
+        cfg=cfg,
+        group_calcs=group_calcs,
+    )
+    st.download_button(
+        "⬇️ Download Excel Report (.xlsx)",
+        data=excel_bytes,
+        file_name="Load_Calculation_Report.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
