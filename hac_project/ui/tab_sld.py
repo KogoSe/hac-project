@@ -17,7 +17,7 @@ gen_pf (Generator PF สำหรับแปลง kW→kVA) sync กับ tab
 import streamlit as st
 
 from constants import PTU_FIX_DEFAULTS, MDBAUX_DEFAULTS, SPARE_DEFAULTS
-from engine.sizing import select_gen_busbar
+from engine.sizing import select_gen_busbar, select_rmu_attributes
 
 import build_ptu_sldA
 
@@ -78,6 +78,15 @@ def compute_smart_ptu_fix_defaults() -> dict:
     gen_busbar = select_gen_busbar(gen_kw, gen_pf, gen_busbar_cfg)
     gen_busbar_a = gen_busbar["size"] if gen_busbar["size"] is not None else busway_a
 
+        # RMU / MV Ring — 4 attribute ท้าย (ยืนยันโดยผู้ใช้ 2026-09)
+    # mv_voltage มาจาก tab "สรุปการคำนวณ Attribute" (Section 0) — ถ้ายังไม่เคยเปิด fallback = 22kV
+    rmu_cfg    = st.session_state.get("rmu_cfg", {})
+    mv_voltage = rmu_cfg.get("mv_voltage", 22000)
+    rmu_sizes  = rmu_cfg.get("rmu_sizes", [200, 630])
+    rmu = select_rmu_attributes(trafo_kva, mv_voltage, rmu_sizes)
+    rmu_cb_str     = f"{rmu['rmu_cb']:.0f}"     if rmu["rmu_cb"]     else "N/A"
+    rmu_busbar_str = f"{rmu['rmu_busbar']:.0f}" if rmu["rmu_busbar"] else "N/A"
+
     return {
         "UPS_RATING":          f"{ups_kw:.0f}kW",
         "TX_S_RATING":         f"{trafo_mva:.2f} MVA DRY TYPE (IP00) 22/0.4 kV, K-4 RATED,\nAL/AL 3P,4W, DYN11, %UK6, 50Hz",
@@ -109,6 +118,11 @@ def compute_smart_ptu_fix_defaults() -> dict:
         "CB_BUSBARBEFOREUPS":  f"{preups_a:.0f}AT\n{preups_a:.0f}AF\n4P, ACB\nLSI (NC)",
         # CB_FROMGEN = เท่ากับ busway ของ Generator (ยืนยันโดยผู้ใช้)
         "CB_FROMGEN":          f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NO)",
+
+        "RMU_CB":              rmu_cb_str,
+        "RMU_BUSBAR":          f"CU BUSBAR {rmu_busbar_str}A",
+        "RMU_LEFT_CB":         rmu_busbar_str,
+        "RMU_RIGHT_LB":        rmu_busbar_str,
     }
 
 

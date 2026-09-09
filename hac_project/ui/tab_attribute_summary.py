@@ -37,6 +37,37 @@ def render():
     trafo_kva = sizes["trafo"]
     gen_kw    = sizes["gen"]
 
+
+        # ═══════════════════════════════════════════════════════════
+    # SECTION 0 — RMU / MV RING SYSTEM ASSUMPTION
+    # ═══════════════════════════════════════════════════════════
+    st.subheader("0️⃣ RMU / MV Ring System — Assumption")
+    st.caption("ใช้คำนวณ RMU_CB / RMU_BUSBAR / RMU_LEFT_CB / RMU_RIGHT_LB — ring 4 ตัว "
+               "ได้ขนาดเดียวกันหมดเพราะ Transformer unify แล้ว | เลือกได้แค่ 200A หรือ 630A")
+
+    with st.expander("⚙️ Assumption — RMU MV Voltage", expanded=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            mv_voltage_kv = st.selectbox("MV Voltage ฝั่ง RMU (kV)", options=[22, 24, 33], index=0,
+                                          help="คนละตัวกับ LV voltage (415V) ที่ใช้คำนวณ Busway/ACB ฝั่ง PTU")
+        with c2:
+            st.caption("Standard RMU CB/Busbar Size: **200A / 630A** (fix ตามสเปกมาตรฐาน RMU — ไม่มีขนาดอื่น)")
+
+    mv_voltage = mv_voltage_kv * 1000
+    st.session_state.rmu_cfg = {"mv_voltage": mv_voltage, "rmu_sizes": [200, 630]}
+
+    from engine.sizing import select_rmu_attributes
+    rmu_result = select_rmu_attributes(trafo_kva, mv_voltage, [200, 630])
+
+    rc1, rc2, rc3 = st.columns(3)
+    rc1.metric("I_rated ต่อ RMU", f"{rmu_result['i_rated']:,.1f} A")
+    rc2.metric("RMU_CB", f"{rmu_result['rmu_cb']:.0f} A" if rmu_result["rmu_cb"] else "❌ N/A")
+    rc3.metric("RMU_BUSBAR (I_rated × 4)", f"{rmu_result['rmu_busbar']:.0f} A" if rmu_result["rmu_busbar"] else "❌ N/A")
+    if rmu_result["rmu_cb"] is None or rmu_result["rmu_busbar"] is None:
+        st.error("❌ ไม่มีขนาด RMU (200A/630A) รองรับ I_rated ที่คำนวณได้ — ตรวจสอบขนาด Transformer อีกครั้ง")
+
+    st.divider()
+
     # ═══════════════════════════════════════════════════════════
     # SECTION 1 — GROUND CABLE SIZING (BS 7671)
     # ═══════════════════════════════════════════════════════════
@@ -146,6 +177,10 @@ def render():
         "RMU_S_GROUNDCABLE":   "BS 7671 — ฐาน Transformer เดียวกับ TX_S_GROUNDCABLE (ดูตาราง A ด้านบน)",
         "GEN_S_GROUNDCABLE":   "BS 7671 — ฐาน Generator (ดูตาราง B ด้านบน)",
         "PTU_GROUNDCABLE":     "BS 7671 — ฐาน Generator เดียวกับ GEN_S_GROUNDCABLE (ดูตาราง B ด้านบน)",
+        "RMU_CB":       f"I_rated ของ Transformer เอง ที่ MV={mv_voltage_kv}kV — เลือก 200A หรือ 630A",
+        "RMU_BUSBAR":   f"I_rated × 4 (รองรับกรณี ring ขาด 1 เส้น ต้องเลี้ยงโหลด RMU ทั้ง 4 ตัวรวมกัน) — เลือก 200A หรือ 630A",
+        "RMU_LEFT_CB":  "เท่ากับ RMU_BUSBAR (Load Break switch สำหรับเชื่อม ring กับ RMU ข้างเคียง)",
+        "RMU_RIGHT_LB": "เท่ากับ RMU_BUSBAR (Load Break switch สำหรับเชื่อม ring กับ RMU ข้างเคียง)",
     }
 
     ground = st.session_state.get("ground_result")

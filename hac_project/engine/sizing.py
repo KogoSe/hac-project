@@ -184,3 +184,35 @@ def select_gen_busbar(gen_kw: float, gen_pf: float, cfg: dict) -> dict:
     util = i_rated / size if size else None
 
     return {"size": size, "unit": "A", "load": i_rated, "util": util, "i_rated": i_rated}
+
+def select_rmu_attributes(trafo_kva: float, mv_voltage: float, rmu_sizes: list = None) -> dict:
+    """
+    เลือกขนาด RMU (Ring Main Unit, MV switchgear) — ยืนยันโดยผู้ใช้ (2026-09):
+    Topology: RMU แต่ละตัวมี 2 เส้นเข้า (ซ้าย/ขวา) ต่อเป็น ring กับ RMU ข้างเคียง
+    แล้วมี outgoing feeder (RMU_CB) ไปหม้อแปลงของตัวเอง 1 ตัว (1 หม้อแปลง = 1 ก้อน source UPS)
+
+    - RMU_CB      : ขนาดจาก I_rated ของหม้อแปลงตัวเอง (outgoing feeder เดี่ยว)
+    - RMU_BUSBAR  : ต้องรองรับกรณี ring ขาด 1 เส้น แล้วต้องเลี้ยงโหลดของ RMU ทั้ง 4 ตัวรวมกัน
+                    -> ใช้ I_rated x 4
+    - RMU_LEFT_CB / RMU_RIGHT_LB : incomer/tie เชื่อม ring กับ RMU ข้างเคียง — ใช้ค่าเท่ากับ
+                    RMU_BUSBAR เป๊ะ (ต่างกันแค่ชื่ออุปกรณ์ทางกายภาพ: LB=Load Break ใช้เชื่อมเฉยๆ
+                    ไม่มีฟังก์ชันป้องกัน, CB=Circuit Breaker มีฟังก์ชันป้องกันด้วย)
+    - ทุกกลุ่มใช้ trafo ขนาดเดียวกันอยู่แล้ว (unify_common_sizes) -> RMU ทั้ง 4 ตัวเลยได้ขนาดเดียวกันหมด
+    - Standard size มีแค่ 2 ตัวเลือกเท่านั้น: 200A / 630A (ยืนยันโดยผู้ใช้ — คนละ list กับ busway LV)
+
+    trafo_kva  : ขนาด Transformer ที่เลือกได้แล้ว (common size ทุกกลุ่ม, kVA)
+    mv_voltage : แรงดันฝั่ง MV ของ RMU (V) เช่น 22000 / 24000 / 33000 — คนละตัวกับ voltage LV (415V)
+    rmu_sizes  : standard size list ของ RMU CB/Busbar — default [200, 630]
+    """
+    if rmu_sizes is None:
+        rmu_sizes = [200, 630]
+
+    i_rated = (trafo_kva * 1000) / (1.732 * mv_voltage)
+    i_ring  = i_rated * 4
+
+    return {
+        "rmu_cb":     select_standard_size(i_rated, rmu_sizes),
+        "rmu_busbar": select_standard_size(i_ring, rmu_sizes),
+        "i_rated":    i_rated,
+        "i_ring":     i_ring,
+    }
