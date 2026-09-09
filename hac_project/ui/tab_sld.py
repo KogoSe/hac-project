@@ -97,7 +97,7 @@ def compute_smart_ptu_fix_defaults() -> dict:
         "PTU_MAINBUSBAR":      f"{busway_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
         "GEN_S_BUSBARRATING":  f"{gen_busbar_a:.0f}A CU, BUS BAR 100%N, 25%G, 3P 4W",
         "PTU_IF01":            f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NC)",
-        "PTU_IF02":            f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NO)",
+        "PTU_IF02":            f"{gen_busbar_a:.0f}AT\n{gen_busbar_a:.0f}AF\n4P, ACB\nLSI (NO)",
         "GEN_LEFT_ACB":        f"{gen_busbar_a:.0f}AT\n{gen_busbar_a:.0f}AF\n4P, ACB,\nLSI (NC)",
         "GEN_RIGHT_ACB":       f"{gen_busbar_a:.0f}AT\n{gen_busbar_a:.0f}AF\n4P, ACB,\nLSI (NO)",
 
@@ -116,8 +116,6 @@ def compute_smart_ptu_fix_defaults() -> dict:
 
         # CB_BUSBARBEFOREUPS = เท่ากับ before_ups_busbar (ยืนยันโดยผู้ใช้: เลือกเท่า CB ของ busbar เดียวกัน)
         "CB_BUSBARBEFOREUPS":  f"{preups_a:.0f}AT\n{preups_a:.0f}AF\n4P, ACB\nLSI (NC)",
-        # CB_FROMGEN = เท่ากับ busway ของ Generator (ยืนยันโดยผู้ใช้)
-        "CB_FROMGEN":          f"{busway_a:.0f}AT\n{busway_a:.0f}AF\n4P, ACB\nLSI (NO)",
 
         "RMU_CB":              rmu_cb_str,
         "RMU_BUSBAR":          f"CU BUSBAR {rmu_busbar_str}A",
