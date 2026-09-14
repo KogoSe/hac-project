@@ -127,7 +127,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
     doc.add_paragraph(
         "HAC Load Designer is an engineering tool for data center power distribution "
         "design. One of its core functions is deciding how each electrical load row "
-        "(a High-Availability Cabinet, HAC) is connected to the redundant UPS units "
+        "(a Hot Aisle Containment, HAC) is connected to the redundant UPS units "
         "serving its group, so that if any single UPS fails, the resulting load "
         "increase on the remaining units is kept as low as possible. This decision "
         "directly determines the required capacity of the UPS units, generators, "
