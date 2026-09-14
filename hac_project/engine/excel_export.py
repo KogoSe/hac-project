@@ -26,6 +26,7 @@ SUBTOTAL_FILL  = PatternFill("solid", fgColor="FFF2CC")
 HEADER_GREY    = PatternFill("solid", fgColor="D9D9D9")
 OK_FILL        = PatternFill("solid", fgColor="C6E0B4")
 OVER_FILL      = PatternFill("solid", fgColor="FFC7CE")
+GREY_SKIP_FILL = PatternFill("solid", fgColor="D9D9D9")   # คอลัมน์ self-fail ที่ไม่คำนวณต่อ (ตามต้นแบบ)
 
 WHITE_BOLD = Font(color="FFFFFF", bold=True)
 BOLD       = Font(bold=True)
@@ -41,6 +42,14 @@ def _border_range(ws, r1, c1, r2, c2):
     for r in range(r1, r2 + 1):
         for c in range(c1, c2 + 1):
             ws.cell(row=r, column=c).border = BORDER
+
+
+def _skip_cell(ws, row, col):
+    """คอลัมน์ self-fail ที่ UPS ตัวเองพังไปแล้ว — เกรย์ไว้เฉยๆ ไม่คำนวณต่อ (ตามต้นแบบ)"""
+    c = ws.cell(row=row, column=col)
+    c.value = None
+    c.fill = GREY_SKIP_FILL
+    return c
 
 
 def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
@@ -60,6 +69,17 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
         scenario_cols[sc] = list(range(col, col + 4))
         col += 5  # 4 คอลัมน์ + spacer
     last_col = col - 2
+
+    # ── คอลัมน์ "self-fail" ของแต่ละ scenario fail (เช่น คอลัมน์ A ในบล็อก A Failure) ──
+    # แถวสรุป/loss chain ทุกแถวใต้ IT Load จะไม่คำนวณอะไรในคอลัมน์นี้เลย (เกรย์ไว้เฉยๆ)
+    # เพราะ UPS ตัวที่พังไปแล้ว ไม่มี "โหลดที่เหลือ" ให้เอามาคิด HVAC/Charging/Loss ต่อ
+    self_fail_col = {}
+    for sc in scenarios:
+        if sc == "Normal":
+            continue
+        for u, col_i in zip(UPS_UNITS, scenario_cols[sc]):
+            if u == sc:
+                self_fail_col[sc] = col_i
 
     # ── Title ──
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
@@ -113,8 +133,13 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     ws.cell(row=row, column=2, value="IT Load").font = BOLD
     row += 1
 
+    BAND_FILL = PatternFill("solid", fgColor="F2F2F2")
+
     data_start = row
-    for r in grp:
+    for i, r in enumerate(grp):
+        if i % 2 == 1:
+            for band_col in (1, 2, 3, 4, 5):
+                ws.cell(row=row, column=band_col).fill = BAND_FILL
         ws.cell(row=row, column=2, value=f"  - DATA HALL ({r['hac']} {r['side']})")
         ws.cell(row=row, column=3, value=r["kw"])
         ws.cell(row=row, column=4, value=1.0)
@@ -150,10 +175,15 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     ws.cell(row=total_row, column=5, value=f"=SUM(E{data_start}:E{data_end})")
     for sc in scenarios:
         for col_i in scenario_cols[sc]:
+            if col_i == self_fail_col.get(sc):
+                _skip_cell(ws, total_row, col_i)
+                continue
             L = get_column_letter(col_i)
             ws.cell(row=total_row, column=col_i, value=f"=SUM({L}{data_start}:{L}{data_end})")
     for c in range(3, last_col + 1):
         cell = ws.cell(row=total_row, column=c)
+        if cell.fill == GREY_SKIP_FILL:
+            continue
         cell.font = BOLD
         cell.fill = SUBTOTAL_FILL
         cell.number_format = "#,##0.0"
@@ -166,8 +196,15 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     ws.cell(row=row, column=3, value=f"=C{total_row}*{tx}")
     for sc in scenarios:
         for col_i in scenario_cols[sc]:
+            if col_i == self_fail_col.get(sc):
+                _skip_cell(ws, tx1_row, col_i)
+                continue
             L = get_column_letter(col_i)
-            ws.cell(row=row, column=col_i, value=f"={L}{total_row}*{tx}")
+            ws.cell(row=tx1_row, column=col_i, value=f"={L}{total_row}*{tx}")
+    for c in range(3, last_col + 1):
+        cell = ws.cell(row=tx1_row, column=c)
+        if cell.fill != GREY_SKIP_FILL:
+            cell.number_format = "#,##0.0"
     row += 1
 
     # ── Connected IT Load ──
@@ -176,70 +213,126 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     ws.cell(row=row, column=3, value=f"=C{total_row}+C{tx1_row}")
     for sc in scenarios:
         for col_i in scenario_cols[sc]:
+            if col_i == self_fail_col.get(sc):
+                _skip_cell(ws, connected_row, col_i)
+                continue
             L = get_column_letter(col_i)
-            ws.cell(row=row, column=col_i, value=f"={L}{total_row}+{L}{tx1_row}")
+            ws.cell(row=connected_row, column=col_i, value=f"={L}{total_row}+{L}{tx1_row}")
     for c in range(3, last_col + 1):
-        ws.cell(row=row, column=c).font = BOLD
-    row += 2
+        cell = ws.cell(row=connected_row, column=c)
+        cell.font = BOLD
+        if cell.fill != GREY_SKIP_FILL:
+            cell.number_format = "#,##0.0"
+    row += 1
+
+    row += 1
+
+    def _chain_row(label, col_c_value, per_col_formula=None, bold=False, fmt="#,##0.0", banded=False):
+        """
+        เขียน 1 แถว ทั้งคอลัมน์ C (Total) และทุก scenario column (F..last_col)
+        - col_c_value: ค่า/สูตรสำหรับคอลัมน์ C
+        - per_col_formula(L): callback รับ column letter คืนสูตรสำหรับคอลัมน์นั้น
+          (ถ้าไม่ใส่ = ค่าคงที่ -> reference กลับไปที่ $C$row เหมือนกันทุกคอลัมน์ ตาม pattern ของ template ต้นแบบ)
+        """
+        nonlocal row
+        r = row
+        lc = ws.cell(row=r, column=2, value=label)
+        vc = ws.cell(row=r, column=3, value=col_c_value)
+        vc.number_format = fmt
+        if bold:
+            lc.font = BOLD
+            vc.font = BOLD
+        for sc in scenarios:
+            for col_i in scenario_cols[sc]:
+                if col_i == self_fail_col.get(sc):
+                    _skip_cell(ws, r, col_i)
+                    continue
+                L = get_column_letter(col_i)
+                formula = per_col_formula(L) if per_col_formula else f"=$C${r}"
+                cell = ws.cell(row=r, column=col_i, value=formula)
+                cell.number_format = fmt
+                if bold:
+                    cell.font = BOLD
+        if banded:
+            for c in range(2, last_col + 1):
+                cell = ws.cell(row=r, column=c)
+                if cell.fill != GREY_SKIP_FILL:
+                    cell.fill = SUBTOTAL_FILL
+        row += 1
+        return r
 
     # ── UPS ──
-    ups_row = row
-    ws.cell(row=row, column=2, value="Capacity of UPS IT").font = BOLD
-    ws.cell(row=row, column=3, value=equip["ups"]["size"])
-    row += 1
+    ups_row = _chain_row("Capacity of UPS IT", equip["ups"]["size"], bold=True)
     ws.cell(row=row, column=2, value="Utilization (%)")
     for sc in scenarios:
         for col_i in scenario_cols[sc]:
+            if col_i == self_fail_col.get(sc):
+                _skip_cell(ws, row, col_i)
+                continue
             L = get_column_letter(col_i)
             c = ws.cell(row=row, column=col_i, value=f"={L}{connected_row}/$C${ups_row}")
             c.number_format = "0.0%"
     row += 2
 
-    ups_loss_row = row
-    ws.cell(row=row, column=2, value=f"UPS Losses (Eff={cfg['ups_eff'] * 100:.0f}%)")
-    ws.cell(row=row, column=3, value=f"=C{connected_row}*(1/{cfg['ups_eff']}-1)")
+    ups_loss_row = _chain_row(
+        f"UPS Losses (Eff={cfg['ups_eff'] * 100:.0f}%)",
+        f"=C{connected_row}*(1/{cfg['ups_eff']}-1)",
+        per_col_formula=lambda L: f"={L}{connected_row}*(1/{cfg['ups_eff']}-1)")
+    charging_row = _chain_row("UPS Charging", cfg["ups_charging"])
+    ups_summary_row = _chain_row(
+        "Summary of UPS Losses and Charging",
+        f"=C{ups_loss_row}+C{charging_row}",
+        per_col_formula=lambda L: f"={L}{ups_loss_row}+{L}{charging_row}",
+        bold=True, banded=True)
     row += 1
-    charging_row = row
-    ws.cell(row=row, column=2, value="UPS Charging")
-    ws.cell(row=row, column=3, value=cfg["ups_charging"])
-    row += 1
-    ups_summary_row = row
-    ws.cell(row=row, column=2, value="Summary of UPS Losses and Charging").font = BOLD
-    ws.cell(row=row, column=3, value=f"=C{ups_loss_row}+C{charging_row}")
-    row += 2
 
     # ── HVAC ──
-    hvac_row = row
-    ws.cell(row=row, column=2, value="Summary of HVAC Loads").font = BOLD
-    ws.cell(row=row, column=3, value=cfg["hvac_total"])
-    row += 2
+    hvac_row = _chain_row("Summary of HVAC Loads", cfg["hvac_total"], bold=True, banded=True)
+
+    # ── Transmission loss รอบ 2 (PTU → Transformer/Generator) — เดิมขาดไปทั้งหมด ──
+    tx2_row = _chain_row(
+        f"Transmission loss {tx * 100:.1f}% (PTU→Trafo/Gen)",
+        f"=(C{ups_summary_row}+C{hvac_row})*{tx}",
+        per_col_formula=lambda L: f"=({L}{ups_summary_row}+{L}{hvac_row})*{tx}")
+    row += 1
 
     # ── Total Connected Load / Transformer / Generator ──
-    total_conn_row = row
-    ws.cell(row=row, column=2, value="Total Connected Load").font = BOLD
-    ws.cell(row=row, column=3, value=f"=C{connected_row}+C{ups_summary_row}+C{hvac_row}")
-    row += 1
+    total_conn_row = _chain_row(
+        "Total Connected Load",
+        f"=C{connected_row}+C{ups_summary_row}+C{hvac_row}+C{tx2_row}",
+        per_col_formula=lambda L: f"={L}{connected_row}+{L}{ups_summary_row}+{L}{hvac_row}+{L}{tx2_row}",
+        bold=True, banded=True)
 
-    trafo_row = row
-    ws.cell(row=row, column=2, value="Capacity of Transformer").font = BOLD
-    ws.cell(row=row, column=3, value=equip["trafo"]["size"])
-    row += 1
+    trafo_row = _chain_row("Capacity of Transformer", equip["trafo"]["size"], bold=True)
     ws.cell(row=row, column=2, value="Utilization (%)")
+    for sc in scenarios:
+        for col_i in scenario_cols[sc]:
+            if col_i == self_fail_col.get(sc):
+                _skip_cell(ws, row, col_i)
+                continue
+            L = get_column_letter(col_i)
+            c = ws.cell(row=row, column=col_i, value=f"={L}{total_conn_row}/$C${trafo_row}")
+            c.number_format = "0.0%"
     c = ws.cell(row=row, column=3, value=f"=C{total_conn_row}/C{trafo_row}")
     c.number_format = "0.0%"
     row += 2
 
-    gen_row = row
-    ws.cell(row=row, column=2, value="Capacity of Generator").font = BOLD
-    ws.cell(row=row, column=3, value=equip["gen"]["size"])
-    row += 1
+    gen_row = _chain_row("Capacity of Generator", equip["gen"]["size"], bold=True)
     ws.cell(row=row, column=2, value="Utilization (%)")
+    for sc in scenarios:
+        for col_i in scenario_cols[sc]:
+            if col_i == self_fail_col.get(sc):
+                _skip_cell(ws, row, col_i)
+                continue
+            L = get_column_letter(col_i)
+            c = ws.cell(row=row, column=col_i, value=f"={L}{total_conn_row}/$C${gen_row}")
+            c.number_format = "0.0%"
     c = ws.cell(row=row, column=3, value=f"=C{total_conn_row}/C{gen_row}")
     c.number_format = "0.0%"
+    row += 1
 
-    ws.cell(row=trafo_row, column=3).font = BOLD
-    ws.cell(row=gen_row, column=3).font = BOLD
-    ws.cell(row=total_conn_row, column=3).font = BOLD
+    # ── กรอบตารางเต็มความกว้าง ตั้งแต่ Data Hall ยันบรรทัดสุดท้าย ──
+    _border_range(ws, data_start - 2, 1, row - 1, last_col)
 
     ws.column_dimensions["B"].width = 34
     for col_i in range(3, last_col + 1):
