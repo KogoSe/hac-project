@@ -73,4 +73,4 @@ SPARE_DEFAULTS = [
 # NOTE: placeholder list from KogoSe — replace with confirmed manufacturer
 # catalog when available. IEEE-519 TDD table itself lives in engine/harmonic.py
 # since it's the calculation logic, not a project-specific assumption.
-SVG_STANDARD_SIZES = [25, 30, 50, 75, 100, 150, 200, 300, 400, 500, 600]  # Amps
+SVG_STANDARD_SIZES = [25, 30, 50, 75, 100, 150, 200, 300, 400, 500, 600]  # Ampsd
