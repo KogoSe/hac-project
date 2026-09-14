@@ -67,3 +67,10 @@ MDBAUX_DEFAULTS = [
 SPARE_DEFAULTS = [
     ("CB_MCCB_BLOCK_SPARE", "630AT\n630AF\nTPN, \nMCCB,\nLSI (NO)"),
 ]
+
+
+# ── SVG (Active Harmonic Filter) SIZING (tab 7) ─────────────────
+# NOTE: placeholder list from KogoSe — replace with confirmed manufacturer
+# catalog when available. IEEE-519 TDD table itself lives in engine/harmonic.py
+# since it's the calculation logic, not a project-specific assumption.
+SVG_STANDARD_SIZES = [25, 30, 50, 75, 100, 150, 200, 300, 400, 500, 600]  # Amps
