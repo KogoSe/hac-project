@@ -34,10 +34,9 @@ def render():
     with st.expander("⚙️ แก้ไข Assumption & Standard Sizes", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
-            rack_pf = st.number_input("Power Factor ของ Rack", value=0.95, step=0.01)
+            rack_pf = st.number_input("Power Factor ของ Rack", value=0.95, step=0.01, key="taboff_rack_pf")
         with col2:
-            margin = st.number_input("Design Margin", value=1.25, step=0.05)
-
+            margin = st.number_input("Design Margin", value=1.25, step=0.05, key="taboff_margin")
         st.caption(f"Voltage: {voltage:.0f} V (ค่าเดียวกับแท็บ Equipment Sizing — แก้ที่นั่นจุดเดียว)")
 
         st.divider()
