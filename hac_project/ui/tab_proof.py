@@ -6,22 +6,37 @@ TAB — Optimization Proof: แสดงหลักฐานว่าผลล�
   (6^k) สำหรับกลุ่มที่มี 2-source <= 8 แถว เพื่อยืนยันว่ากลุ่มที่เป็น "คอขวด" (bottleneck —
   กลุ่มที่ max-fail-load เท่ากับ M* ของทั้งระบบ) MILP หา pairing ที่ optimal จริง
   ส่วนกลุ่มอื่นที่ไม่ใช่คอขวด ไม่จำเป็นต้อง optimal เป็นรายกลุ่ม (แค่ไม่เกิน M* ก็พอ)
+- ปุ่ม generate .docx: ใช้ build_proof_context() ตัวเดียวกับที่ section 3 ใช้แสดงผล
+  (ไม่คำนวณ evaluate_group_max_fail/brute_force_pairing_check ซ้ำสองที่)
 """
 import streamlit as st
 import pandas as pd
 
 from constants import GROUP_BADGE_COLORS
-from engine.optimization import evaluate_group_max_fail, brute_force_pairing_check
-
-BOTTLENECK_TOL = 1e-6
+from engine.optimization import build_proof_context
+from engine.report_docx import build_optimization_proof_docx
 
 
 def render():
+    milp_result = st.session_state.get("milp_result") if st.session_state.get("run_optimization", False) else None
+    proof_context = build_proof_context(milp_result) if milp_result is not None else None
+
+    st.download_button(
+        label="📄 Generate Optimization Proof Document (.docx)",
+        data=build_optimization_proof_docx(proof_context),
+        file_name="HAC_Optimization_Proof.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        help="เอกสารภาษาอังกฤษอธิบายหลักการ MILP/LP relaxation/branch-and-bound และวิธี "
+             "verify ผลลัพธ์ ตั้งแต่ต้นจนจบ — ส่วนหลักการคงที่เสมอ ส่วน Appendix B "
+             "(ผลลัพธ์ของเคสนี้) จะผูกกับข้อมูล session ปัจจุบัน ถ้ายังไม่ได้รัน "
+             "optimization จะไม่มี Appendix B แนบมา",
+    )
+    st.divider()
+
     if not st.session_state.get("run_optimization", False):
         st.info("กดปุ่ม **คำนวณ Pairing Optimization** ในแท็บกรอกข้อมูลก่อน")
         st.stop()
 
-    milp_result = st.session_state.get("milp_result")
     if milp_result is None:
         st.info("ยังไม่มีผลลัพธ์ MILP — ไปที่แท็บ **ผลลัพธ์** ก่อนเพื่อรัน optimization")
         st.stop()
@@ -73,15 +88,14 @@ def render():
         "ตรึง grouping ตามที่ MILP หาได้ แล้ววนหา pairing ที่ดีที่สุดจริงทุกความเป็นไปได้ (6^k) "
         "เฉพาะกลุ่มที่มีแถว 2-source <= 8 แถว (k ใหญ่กว่านี้ 6^k จะช้าเกินไป) "
         "กลุ่มที่เป็น **คอขวด** (max-fail-load ของกลุ่ม = M* ของทั้งระบบ) ต้อง match กับ MILP เป๊ะ "
-        "ส่วนกลุ่มอื่นไม่จำเป็นต้อง optimal รายกลุ่ม (แค่ไม่เกิน M* ก็พอแล้ว)"
+        "ส่วนกลุ่มอื่นไม่จำเป็นต้อง optimal เป็นรายกลุ่ม (แค่ไม่เกิน M* ก็พอแล้ว)"
     )
 
-    overall_max = milp_result["objective"]
+    overall_max = proof_context["overall_max"]
     check_rows = []
-    for gi, grp in enumerate(groups, 1):
-        group_max = evaluate_group_max_fail(grp)
-        is_bottleneck = abs(group_max - overall_max) < BOTTLENECK_TOL
-        n_two = sum(1 for r in grp if r["source_type"] != "4-source")
+    for gc in proof_context["group_checks"]:
+        gi, grp = gc["index"], gc["group"]
+        group_max, is_bottleneck, n_two, chk = gc["group_max"], gc["is_bottleneck"], gc["n_two_source"], gc["brute_force"]
 
         color = GROUP_BADGE_COLORS[(gi - 1) % len(GROUP_BADGE_COLORS)]
         label = f"PTU Group {gi}" + ("  🎯 คอขวด (bottleneck)" if is_bottleneck else "")
@@ -91,7 +105,6 @@ def render():
             unsafe_allow_html=True,
         )
 
-        chk = brute_force_pairing_check(grp)
         if chk is None:
             st.info(f"กลุ่มนี้มี 2-source {n_two} แถว (> 8) — ข้ามการเช็ค brute-force (6^{n_two} ช้าเกินไป)")
             check_rows.append({

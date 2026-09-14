@@ -3,3 +3,4 @@ pandas
 openpyxl
 ezdxf
 pulp
+python-docx

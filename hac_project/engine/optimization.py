@@ -21,6 +21,7 @@ PAIRS = ["AB", "AC", "AD", "BC", "BD", "CD"]
 EPS_TIE_BREAK = 1e-5
 DEFAULT_TIME_LIMIT = 120
 DEFAULT_GAP_REL = 0.01
+BOTTLENECK_TOL = 1e-6
 
 
 def _build_coeff_table() -> dict:
@@ -270,4 +271,35 @@ def brute_force_pairing_check(grp: list[dict], max_two_source: int = 8) -> dict 
         "best_pairing": best_pairs,
         "n_two_source": k,
         "combinations_tried": len(PAIRS) ** k,
+    }
+
+
+def build_proof_context(milp_result: dict, max_two_source: int = 8) -> dict:
+    """
+    รวมทุกอย่างที่ต้องใช้ "แสดงผล" หรือ "สร้างเอกสาร proof" จาก milp_result เดียว —
+    single source of truth ให้ ui/tab_proof.py (แสดงใน UI) และ engine/report_docx.py
+    (สร้าง .docx) เรียกใช้ร่วมกัน ไม่คำนวณ evaluate_group_max_fail / brute_force_pairing_check
+    ซ้ำกันคนละที่ (ผลอาจไม่ sync กันถ้าแก้ที่หนึ่งแล้วลืมอีกที่)
+    """
+    groups = milp_result["groups"]
+    overall_max = milp_result["objective"]
+    group_checks = []
+    for gi, grp in enumerate(groups, 1):
+        group_max = evaluate_group_max_fail(grp)
+        is_bottleneck = abs(group_max - overall_max) < BOTTLENECK_TOL
+        n_two = sum(1 for r in grp if r["source_type"] != "4-source")
+        chk = brute_force_pairing_check(grp, max_two_source=max_two_source)
+        group_checks.append({
+            "index": gi,
+            "group": grp,
+            "n_two_source": n_two,
+            "group_max": group_max,
+            "is_bottleneck": is_bottleneck,
+            "brute_force": chk,  # None ถ้าข้าม (2-source > max_two_source)
+        })
+    return {
+        "milp_result": milp_result,
+        "overall_max": overall_max,
+        "group_checks": group_checks,
+        "max_two_source": max_two_source,
     }
