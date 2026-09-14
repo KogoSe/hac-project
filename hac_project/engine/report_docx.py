@@ -127,7 +127,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
     doc.add_paragraph(
         "HAC Load Designer is an engineering tool for data center power distribution "
         "design. One of its core functions is deciding how each electrical load row "
-        "(a High-Availability Cabinet, HAC) is connected to the redundant UPS units "
+        "(a Hot Aisle Cabinet, HAC) is connected to the redundant UPS units "
         "serving its group, so that if any single UPS fails, the resulting load "
         "increase on the remaining units is kept as low as possible. This decision "
         "directly determines the required capacity of the UPS units, generators, "
@@ -155,7 +155,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
     _heading(doc, "2. System Overview and Data Flow", level=1)
     doc.add_paragraph("The relevant part of the design pipeline is:")
     steps = [
-        "HAC rack layout input — each row's load (kW) and source type (2-source or 4-source) is captured.",
+        "Hot Aisle Cabinet (HAC) rack layout input — each row's load (kW) and source type (2-source or 4-source) is captured.",
         "Combined grouping + pairing optimization (this document's subject) — rows are assigned to PTU groups and, within each group, 2-source rows are assigned a UPS pair, in a single MILP solve.",
         "Fault (N-1 contingency) simulation — for every group and every possible single UPS failure, the resulting load on each surviving UPS is computed.",
         "Equipment sizing — the worst-case (fault) load per group drives UPS, generator, transformer, and busway sizing.",
