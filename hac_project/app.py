@@ -1,6 +1,6 @@
 import streamlit as st
 
-from ui import tab_input, tab_result, tab_proof, tab_sizing, tab_attribute_summary, tab_sld, tab_svg
+from ui import tab_input, tab_result, tab_proof, tab_sizing, tab_attribute_summary, tab_sld, tab_svg, tab_taboff
 
 
 # WELCOME P.FILM
@@ -9,9 +9,9 @@ st.set_page_config(page_title="HAC Load Designer", layout="wide")
 
 st.title("⚡ DATA HALL DISTRIBUTION DESIGNER")
 
-tab_1, tab_2, tab_3, tab_4, tab_5, tab_6, tab_7 = st.tabs(
+tab_1, tab_2, tab_3, tab_4, tab_5, tab_6, tab_7, tab_8 = st.tabs(
     ["📋 กรอกข้อมูล", "📊 ผลลัพธ์", "🔍 Optimization Proof", "⚙️ Equipment Sizing",
-     "🧮 Attribute Calculation", "📐 SLD Attributes", "🌀 SVG Sizing"]
+     "🧮 Attribute Calculation", "📐 SLD Attributes", "🌀 SVG Sizing", "🔌 Tap-off"]
 )
 
 with tab_1:
@@ -34,4 +34,7 @@ with tab_6:
 
 with tab_7:
     tab_svg.render()
+
+with tab_8:
+    tab_taboff.render()
 

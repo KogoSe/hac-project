@@ -216,3 +216,26 @@ def select_rmu_attributes(trafo_kva: float, mv_voltage: float, rmu_sizes: list =
         "i_rated":    i_rated,
         "i_ring":     i_ring,
     }
+
+
+def _design_amp_from_kw(kw: float, pf: float, voltage: float, margin: float) -> tuple[float, float]:
+    """คำนวณกระแส actual/design จาก kW เดี่ยว (3-phase, I = kVA*1000/(√3×V))"""
+    kva = kw / pf if pf else 0.0
+    i_actual = (kva * 1000) / (1.732 * voltage)
+    return i_actual, i_actual * margin
+
+
+def select_taboff_breaker(rack_kw: float, pf: float, voltage: float, margin: float, breaker_sizes: list) -> dict:
+    """เลือกขนาด Breaker (MCCB) ของ Tap-off ต่อ rack เดี่ยว"""
+    i_actual, i_design = _design_amp_from_kw(rack_kw, pf, voltage, margin)
+    size = select_standard_size(i_design, breaker_sizes)
+    util = i_design / size if size else None
+    return {"size": size, "unit": "A", "i_actual": i_actual, "i_design": i_design, "util": util}
+
+
+def select_row_busway(row_total_kw: float, pf: float, voltage: float, margin: float, busway_sizes: list) -> dict:
+    """เลือกขนาด Busway ย่อยเหนือ 1 แถว HAC (รวม kW ทั้งแถวก่อนแล้วค่อยหากระแส)"""
+    i_actual, i_design = _design_amp_from_kw(row_total_kw, pf, voltage, margin)
+    size = select_standard_size(i_design, busway_sizes)
+    util = i_design / size if size else None
+    return {"size": size, "unit": "A", "i_actual": i_actual, "i_design": i_design, "util": util}
