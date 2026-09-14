@@ -127,7 +127,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
     doc.add_paragraph(
         "HAC Load Designer is an engineering tool for data center power distribution "
         "design. One of its core functions is deciding how each electrical load row "
-        "(a Hot Aisle Cabinet, HAC) is connected to the redundant UPS units "
+        "(a High-Availability Cabinet, HAC) is connected to the redundant UPS units "
         "serving its group, so that if any single UPS fails, the resulting load "
         "increase on the remaining units is kept as low as possible. This decision "
         "directly determines the required capacity of the UPS units, generators, "
@@ -155,7 +155,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
     _heading(doc, "2. System Overview and Data Flow", level=1)
     doc.add_paragraph("The relevant part of the design pipeline is:")
     steps = [
-        "Hot Aisle Cabinet (HAC) rack layout input — each row's load (kW) and source type (2-source or 4-source) is captured.",
+        "HAC rack layout input — each row's load (kW) and source type (2-source or 4-source) is captured.",
         "Combined grouping + pairing optimization (this document's subject) — rows are assigned to PTU groups and, within each group, 2-source rows are assigned a UPS pair, in a single MILP solve.",
         "Fault (N-1 contingency) simulation — for every group and every possible single UPS failure, the resulting load on each surviving UPS is computed.",
         "Equipment sizing — the worst-case (fault) load per group drives UPS, generator, transformer, and busway sizing.",
@@ -206,6 +206,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
             ["t[i, g]", "Binary, g = 1..n_groups-1", "1 if row i belongs to a group with index <= g (cumulative-threshold encoding of contiguous grouping)"],
             ["q[i, g, p]", "Binary", "1 if 2-source row i is placed in group g using UPS pair p"],
             ["M", "Continuous, >= 0", "The worst-case (max) fault load across every group, every failed unit, and every surviving unit"],
+            ["y[i, g]", "Derived (not solved directly)", "Shorthand for t[i, g] - t[i, g-1] — \"row i belongs to group g\"; used in Sections 4.2, 4.3, and 4.6"],
         ],
         col_widths_cm=[3.2, 3.8, 8.5],
     )
@@ -216,8 +217,10 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
         "variable t[i, g], read as \"row i belongs to a group numbered g or lower.\" "
         "Membership of row i in group g on its own is then the telescoping "
         "difference t[i, g] - t[i, g-1] (with the convention t[i, 0] = 0 and "
-        "t[i, n_groups] = 1). This keeps the entire grouping decision inside a "
-        "single linear model."
+        "t[i, n_groups] = 1). This difference is referred to as y[i, g] wherever "
+        "used later in this document (Sections 4.2, 4.3, and 4.6) — it is not a "
+        "separate variable the solver optimizes, only a shorthand name for this "
+        "expression in t, kept inside a single linear model throughout."
     )
 
     _heading(doc, "4.2 Constraints", level=2)
@@ -307,6 +310,39 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
         "guaranteed to be within a known, small percentage of optimal — never with "
         "an unquantified guess. Section 6.1 explains how the resulting status is "
         "reported."
+    )
+
+    _heading(doc, "4.6 Unified Formulation", level=2)
+    doc.add_paragraph(
+        "Sections 4.1 through 4.5 build up the model piece by piece. Collected "
+        "into a single expression, using y[i, g] as shorthand for the row-i-in-"
+        "group-g membership indicator introduced in Section 4.1 "
+        "(y[i, g] = t[i, g] - t[i, g-1]), the entire optimization is:"
+    )
+    _add_equation(
+        doc,
+        "min      max      [ sum_2-source  q[i,g,p]\u00b7coeff[p,f,u]\u00b7kw_i   +   sum_4-source  y[i,g]\u00b7(kw_i/3) ]",
+        size=11,
+    )
+    _add_equation(doc, "t,q            g,f,u", size=10)
+    doc.add_paragraph("subject to:")
+    _add_equation(doc, "t[i, g] \u2208 {0, 1}")
+    _add_equation(doc, "t[i, g] \u2265 t[i+1, g]")
+    _add_equation(doc, "t[i, g] \u2264 t[i, g+1]")
+    doc.add_paragraph("and:")
+    _add_equation(doc, "sum over p of q[i, g, p]  =  y[i, g]")
+    doc.add_paragraph(
+        "This min-max form is the most compact statement of the problem: choose "
+        "grouping (t) and pairing (q) to make the worst load, over every group, "
+        "every possible failed unit, and every surviving unit, as small as "
+        "possible. It is mathematically equivalent to the epigraph form actually "
+        "solved (Section 4.4) — minimizing the maximum of a finite set of linear "
+        "expressions is standard practice rewritten by introducing the auxiliary "
+        "variable M and requiring M to be at least each expression, which is "
+        "exactly what turns this min-max statement into the linear constraints "
+        "\"M >= fault_load(g, f, u)\" that CBC actually solves. The min-max form "
+        "and the epigraph form are two notations for the same model, not two "
+        "different models."
     )
 
     # ================= 5. SOLUTION METHOD =================
