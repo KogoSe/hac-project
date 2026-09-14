@@ -17,22 +17,29 @@ from openpyxl.utils import get_column_letter
 from constants import UPS_UNITS
 from engine.pairing import compute_normal_loads, compute_fault_loads
 
-# ── สี (โทนเดียวกับ Section 4.5 ใน tab_result.py) ──────────────
-NORMAL_FILL    = PatternFill("solid", fgColor="C6E0B4")   # เขียวอ่อน
-FAIL_FILL      = PatternFill("solid", fgColor="F8CBAD")   # แดง/ส้มอ่อน (หัวกลุ่ม fail)
-FAIL_CELL_FILL = PatternFill("solid", fgColor="FFC7CE")   # แดงเข้มขึ้น (cell ที่ fail จริง)
-TITLE_FILL     = PatternFill("solid", fgColor="1F4E79")
+# ── ธีมสี "Data Center / Engineering Navy" ──────────────
+NAVY           = "1B365D"
+GRID           = "D9D9D9"
+NORMAL_FILL    = PatternFill("solid", fgColor="D9E6F2")   # ฟ้าอ่อน (Normal, กลืนกับธีม navy)
+FAIL_FILL      = PatternFill("solid", fgColor="F8CBAD")   # ส้มอ่อน (หัวกลุ่ม Fail — แยกจาก Normal ชัดเจน)
+FAIL_CELL_FILL = PatternFill("solid", fgColor="FFC7CE")   # แดงอ่อน (cell ที่ fail จริง)
+TITLE_FILL     = PatternFill("solid", fgColor=NAVY)
 SUBTOTAL_FILL  = PatternFill("solid", fgColor="FFF2CC")
-HEADER_GREY    = PatternFill("solid", fgColor="D9D9D9")
-OK_FILL        = PatternFill("solid", fgColor="C6E0B4")
-OVER_FILL      = PatternFill("solid", fgColor="FFC7CE")
-GREY_SKIP_FILL = PatternFill("solid", fgColor="D9D9D9")   # คอลัมน์ self-fail ที่ไม่คำนวณต่อ (ตามต้นแบบ)
+HEADER_GREY    = PatternFill("solid", fgColor=GRID)
+OK_FILL        = PatternFill("solid", fgColor="E2F0D9")   # เขียวพาสเทล (Status: OK)
+OVER_FILL      = PatternFill("solid", fgColor="FCE4E4")   # แดงพาสเทล (Status: OVER/FAIL/N-A)
+OK_FONT        = Font(color="375623", bold=True)          # เขียวเข้ม
+OVER_FONT      = Font(color="C00000", bold=True)          # แดงเข้ม
+GREY_SKIP_FILL = PatternFill("solid", fgColor=GRID)       # คอลัมน์ self-fail ที่ไม่คำนวณต่อ (ตามต้นแบบ)
+BAND_FILL      = PatternFill("solid", fgColor="F2F7FA")   # ลายทางสลับ (ฟ้าอ่อนมาก)
 
+TITLE_FONT_LG = Font(color="FFFFFF", bold=True, size=14)  # หัวข้อใหญ่ 14pt
 WHITE_BOLD = Font(color="FFFFFF", bold=True)
 BOLD       = Font(bold=True)
 RED_BOLD   = Font(color="C00000", bold=True)
 
-THIN = Side(style="thin", color="BFBFBF")
+THIN = Side(style="thin", color=GRID)
+MEDIUM_NAVY = Side(style="medium", color=NAVY)
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 LEFT = Alignment(horizontal="left", vertical="center")
@@ -42,6 +49,21 @@ def _border_range(ws, r1, c1, r2, c2):
     for r in range(r1, r2 + 1):
         for c in range(c1, c2 + 1):
             ws.cell(row=r, column=c).border = BORDER
+
+
+def _card_outline(ws, r1, c1, r2, c2):
+    """ครอบ 'การ์ด' รอบตาราง — grid บางสีเทาข้างใน + กรอบ navy หนาปานกลางรอบขอบนอก"""
+    _border_range(ws, r1, c1, r2, c2)
+    for c in range(c1, c2 + 1):
+        b = ws.cell(row=r1, column=c).border
+        ws.cell(row=r1, column=c).border = Border(left=b.left, right=b.right, top=MEDIUM_NAVY, bottom=b.bottom)
+        b = ws.cell(row=r2, column=c).border
+        ws.cell(row=r2, column=c).border = Border(left=b.left, right=b.right, top=b.top, bottom=MEDIUM_NAVY)
+    for r in range(r1, r2 + 1):
+        b = ws.cell(row=r, column=c1).border
+        ws.cell(row=r, column=c1).border = Border(left=MEDIUM_NAVY, right=b.right, top=b.top, bottom=b.bottom)
+        b = ws.cell(row=r, column=c2).border
+        ws.cell(row=r, column=c2).border = Border(left=b.left, right=MEDIUM_NAVY, top=b.top, bottom=b.bottom)
 
 
 def _skip_cell(ws, row, col):
@@ -60,6 +82,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     [Fail B: A,C,D] + spacer + [Fail C: A,B,D] + spacer + [Fail D: A,B,C]
     """
     ws = wb.create_sheet(title=sheet_title[:31])
+    ws.sheet_view.showGridLines = False
     scenarios = ["Normal"] + UPS_UNITS
 
     # ── กำหนดตำแหน่งคอลัมน์ (F=6 เป็นต้นไป, เว้น 1 คอลัมน์คั่นทุก scenario) ──
@@ -84,10 +107,10 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     # ── Title ──
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
     t = ws.cell(row=1, column=1, value=f"Load Calculation for {sheet_title}")
-    t.font = WHITE_BOLD
+    t.font = TITLE_FONT_LG
     t.alignment = CENTER
     t.fill = TITLE_FILL
-    ws.row_dimensions[1].height = 22
+    ws.row_dimensions[1].height = 26
 
     # ── Header แถว 3: ชื่อ scenario ──
     ws.cell(row=3, column=1, value="Item").font = BOLD
@@ -133,8 +156,6 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     ws.cell(row=row, column=2, value="IT Load").font = BOLD
     row += 1
 
-    BAND_FILL = PatternFill("solid", fgColor="F2F2F2")
-
     data_start = row
     for i, r in enumerate(grp):
         if i % 2 == 1:
@@ -166,7 +187,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
 
     for col_i in range(3, last_col + 1):
         for r in range(data_start, data_end + 1):
-            ws.cell(row=r, column=col_i).number_format = "#,##0.0"
+            ws.cell(row=r, column=col_i).number_format = "#,##0.00"
 
     # ── Total Power Consumption for Data Hall ──
     total_row = row
@@ -186,7 +207,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
             continue
         cell.font = BOLD
         cell.fill = SUBTOTAL_FILL
-        cell.number_format = "#,##0.0"
+        cell.number_format = "#,##0.00"
     row += 2
 
     # ── Transmission loss (รอบ 1) ──
@@ -204,7 +225,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     for c in range(3, last_col + 1):
         cell = ws.cell(row=tx1_row, column=c)
         if cell.fill != GREY_SKIP_FILL:
-            cell.number_format = "#,##0.0"
+            cell.number_format = "#,##0.00"
     row += 1
 
     # ── Connected IT Load ──
@@ -222,12 +243,12 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
         cell = ws.cell(row=connected_row, column=c)
         cell.font = BOLD
         if cell.fill != GREY_SKIP_FILL:
-            cell.number_format = "#,##0.0"
+            cell.number_format = "#,##0.00"
     row += 1
 
     row += 1
 
-    def _chain_row(label, col_c_value, per_col_formula=None, bold=False, fmt="#,##0.0", banded=False):
+    def _chain_row(label, col_c_value, per_col_formula=None, bold=False, fmt="#,##0.00", banded=False):
         """
         เขียน 1 แถว ทั้งคอลัมน์ C (Total) และทุก scenario column (F..last_col)
         - col_c_value: ค่า/สูตรสำหรับคอลัมน์ C
@@ -334,9 +355,10 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip):
     # ── กรอบตารางเต็มความกว้าง ตั้งแต่ Data Hall ยันบรรทัดสุดท้าย ──
     _border_range(ws, data_start - 2, 1, row - 1, last_col)
 
-    ws.column_dimensions["B"].width = 34
+    ws.column_dimensions["A"].width = 6
+    ws.column_dimensions["B"].width = 42   # กว้างพอสำหรับ label ยาวสุด ไม่ตัดคำ
     for col_i in range(3, last_col + 1):
-        ws.column_dimensions[get_column_letter(col_i)].width = 11
+        ws.column_dimensions[get_column_letter(col_i)].width = 12
     ws.freeze_panes = "C5"
     return ws
 
@@ -347,20 +369,23 @@ def _write_summary_sheet(wb, groups_data):
     groups_data: list ของ {"name": str, "grp": list[dict], "equip": dict}
     """
     ws = wb.create_sheet(title="Summary", index=0)
+    ws.sheet_view.showGridLines = False
     ws.merge_cells("A1:H1")
     t = ws.cell(row=1, column=1, value="LEVEL 3 IT LOAD ANALYSIS — SUMMARY")
-    t.font = WHITE_BOLD
+    t.font = TITLE_FONT_LG
     t.fill = TITLE_FILL
     t.alignment = CENTER
-    ws.row_dimensions[1].height = 22
+    ws.row_dimensions[1].height = 26
 
     row = 3
     for gd in groups_data:
         name, grp, equip = gd["name"], gd["grp"], gd["equip"]
 
-        ws.cell(row=row, column=1, value=f"{name} — Load Transfer Under Failure (kW)").font = BOLD
+        card1_top = row
+        ws.cell(row=row, column=1, value=f"{name} — Load Transfer Under Failure (kW)").font = Font(bold=True, color=NAVY, size=11)
         row += 1
         ws.cell(row=row, column=1, value="System").font = BOLD
+        ws.cell(row=row, column=1).fill = HEADER_GREY
         for i, u in enumerate(UPS_UNITS):
             c = ws.cell(row=row, column=2 + i, value=u)
             c.font = WHITE_BOLD
@@ -370,7 +395,7 @@ def _write_summary_sheet(wb, groups_data):
 
         for faulted in UPS_UNITS:
             f = compute_fault_loads(grp, faulted)
-            ws.cell(row=row, column=1, value=f"{faulted} Failed")
+            ws.cell(row=row, column=1, value=f"{faulted} Failed").font = BOLD
             for i, u in enumerate(UPS_UNITS):
                 cell = ws.cell(row=row, column=2 + i)
                 if u == faulted:
@@ -379,44 +404,58 @@ def _write_summary_sheet(wb, groups_data):
                 else:
                     v = f.get(u, 0.0)
                     cell.value = v if v else None
-                    cell.number_format = "#,##0.0"
+                    cell.number_format = "#,##0.00"
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
             row += 1
-        row += 1
+        card1_bottom = row - 1
+        _card_outline(ws, card1_top + 1, 1, card1_bottom, 5)
+        row += 2
 
-        ws.cell(row=row, column=1, value=f"{name} — Main Equipment Sizing").font = BOLD
+        card2_top = row
+        ws.cell(row=row, column=1, value=f"{name} — Main Equipment Sizing").font = Font(bold=True, color=NAVY, size=11)
         row += 1
         headers = ["Item", "Size", "Unit", "Max Load", "Utilization", "Status"]
         for i, h in enumerate(headers):
             c = ws.cell(row=row, column=1 + i, value=h)
-            c.font = BOLD
-            c.fill = HEADER_GREY
+            c.font = WHITE_BOLD
+            c.fill = TITLE_FILL
+            c.alignment = CENTER
         row += 1
 
         for label, key, unit in [("UPS IT", "ups", "kW"), ("Transformer", "trafo", "kVA"),
                                   ("Generator", "gen", "kW"), ("Busway", "busway", "A")]:
             eq = equip[key]
             ws.cell(row=row, column=1, value=label)
-            ws.cell(row=row, column=2, value=eq["size"])
-            ws.cell(row=row, column=3, value=unit)
+            c2 = ws.cell(row=row, column=2, value=eq["size"])
+            c2.number_format = "#,##0.00"
+            c2.alignment = Alignment(horizontal="right", vertical="center")
+            ws.cell(row=row, column=3, value=unit).alignment = CENTER
             c4 = ws.cell(row=row, column=4, value=eq["load"])
-            c4.number_format = "#,##0.0"
+            c4.number_format = "#,##0.00"
+            c4.alignment = Alignment(horizontal="right", vertical="center")
             status_cell = ws.cell(row=row, column=6)
+            status_cell.alignment = CENTER
             if eq["size"] is None:
                 ws.cell(row=row, column=5, value=None)
                 status_cell.value = "N/A"
                 status_cell.fill = OVER_FILL
+                status_cell.font = OVER_FONT
             else:
                 c5 = ws.cell(row=row, column=5, value=eq["util"])
                 c5.number_format = "0.0%"
+                c5.alignment = Alignment(horizontal="right", vertical="center")
                 is_ok = eq["util"] is not None and eq["util"] <= 1.0
                 status_cell.value = "OK" if is_ok else "OVER"
                 status_cell.fill = OK_FILL if is_ok else OVER_FILL
+                status_cell.font = OK_FONT if is_ok else OVER_FONT
             row += 1
-        row += 2
+        card2_bottom = row - 1
+        _card_outline(ws, card2_top + 1, 1, card2_bottom, 6)
+        row += 3   # เว้นระยะระหว่างกลุ่มให้ชัดเจน ไม่ติดกัน
 
-    ws.column_dimensions["A"].width = 26
+    ws.column_dimensions["A"].width = 30
     for col_letter in ["B", "C", "D", "E", "F", "G", "H"]:
-        ws.column_dimensions[col_letter].width = 13
+        ws.column_dimensions[col_letter].width = 14
     return ws
 
 
