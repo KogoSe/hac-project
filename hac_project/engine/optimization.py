@@ -235,6 +235,7 @@ def solve_pairing_milp(
         "theoretical_lower_bound": theoretical_lb,
         "global_theoretical_lower_bound": global_theoretical_lb,
         "mode": "contiguous",
+        "time_limit": time_limit,
     }
 
 
@@ -410,6 +411,7 @@ def solve_pairing_milp_free(
         "theoretical_lower_bound": theoretical_lb,
         "global_theoretical_lower_bound": global_theoretical_lb,
         "mode": "free",
+        "time_limit": time_limit,
     }
 
 

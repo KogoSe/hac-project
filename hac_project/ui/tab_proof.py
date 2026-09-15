@@ -20,17 +20,36 @@ from engine.report_docx import build_optimization_proof_docx
 def render():
     milp_result = st.session_state.get("milp_result") if st.session_state.get("run_optimization", False) else None
     proof_context = build_proof_context(milp_result) if milp_result is not None else None
+    current_mode = milp_result.get("mode") if milp_result is not None else None
 
-    st.download_button(
-        label="📄 Generate Optimization Proof Document (.docx)",
-        data=build_optimization_proof_docx(proof_context),
-        file_name="HAC_Optimization_Proof.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        help="เอกสารภาษาอังกฤษอธิบายหลักการ MILP/LP relaxation/branch-and-bound และวิธี "
-             "verify ผลลัพธ์ ตั้งแต่ต้นจนจบ — ส่วนหลักการคงที่เสมอ ส่วน Appendix B "
-             "(ผลลัพธ์ของเคสนี้) จะผูกกับข้อมูล session ปัจจุบัน ถ้ายังไม่ได้รัน "
-             "optimization จะไม่มี Appendix B แนบมา",
-    )
+    col_doc1, col_doc2 = st.columns(2)
+    with col_doc1:
+        contiguous_context = proof_context if current_mode == "contiguous" else None
+        st.download_button(
+            label="📄 Generate Proof Document — Contiguous (.docx)",
+            data=build_optimization_proof_docx(contiguous_context, mode="contiguous"),
+            file_name="HAC_Optimization_Proof_Contiguous.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            help="เอกสารอธิบายหลักการโมเดล Contiguous (ใช้เดินสายจริงได้) ตั้งแต่ต้นจนจบ — "
+                 "ส่วนหลักการคงที่เสมอ ส่วน Appendix B (ผลลัพธ์ของเคสนี้) จะแนบก็ต่อเมื่อผลล่าสุด "
+                 "ใน session เป็นโหมด Contiguous เท่านั้น",
+        )
+    with col_doc2:
+        free_context = proof_context if current_mode == "free" else None
+        st.download_button(
+            label="📄 Generate Proof Document — Free (.docx)",
+            data=build_optimization_proof_docx(free_context, mode="free"),
+            file_name="HAC_Optimization_Proof_Free.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            help="เอกสารอธิบายหลักการโมเดล Free/ไม่จำกัดลำดับ (สำหรับเทียบเท่านั้น ห้ามเดินสายจริง) — "
+                 "ส่วนหลักการคงที่เสมอ ส่วน Appendix B (ผลลัพธ์ของเคสนี้) จะแนบก็ต่อเมื่อผลล่าสุด "
+                 "ใน session เป็นโหมด Free เท่านั้น",
+        )
+    if current_mode is not None:
+        st.caption(
+            f"ผลลัพธ์ล่าสุดใน session นี้คือโหมด **{current_mode}** — เอกสารของอีกโหมดจะมีแค่ส่วนหลักการ "
+            "ไม่มี Appendix B (ผลตัวเลขของเคสนี้) แนบมา เพราะยังไม่ได้รันโหมดนั้นล่าสุด"
+        )
     st.divider()
 
     if not st.session_state.get("run_optimization", False):

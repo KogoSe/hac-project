@@ -16,6 +16,8 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
+from engine.optimization import DEFAULT_TIME_LIMIT
+
 
 ACCENT = RGBColor(0x1F, 0x4E, 0x79)
 GREY = RGBColor(0x59, 0x59, 0x59)
@@ -73,14 +75,23 @@ def _heading(doc, text, level=1):
     return h
 
 
-def build_optimization_proof_docx(proof_context: dict | None = None) -> io.BytesIO:
+def build_optimization_proof_docx(proof_context: dict | None = None, mode: str = "contiguous") -> io.BytesIO:
     """
     proof_context: ผลลัพธ์จาก engine.optimization.build_proof_context(milp_result) หรือ None
-    ถ้า None (ยังไม่ได้รัน optimization) เอกสารจะมีแค่ส่วนหลักการ (Section 1-8 + Appendix A)
-    ถ้ามีค่า จะแนบ Appendix B: Computed Results for This Case ต่อท้าย โดยดึงตัวเลขจริง
-    จาก session ปัจจุบัน (จึงเป็นส่วนเดียวในเอกสารที่ "vary" ตาม input ที่กรอกจริง)
+    ถ้า None (ยังไม่ได้รัน optimization ของ mode นี้ใน session ปัจจุบัน) เอกสารจะมีแค่ส่วนหลักการ
+    (Section 1-8 + Appendix A) ถ้ามีค่า จะแนบ Appendix B: Computed Results for This Case ต่อท้าย
+    โดยดึงตัวเลขจริงจาก session ปัจจุบัน (จึงเป็นส่วนเดียวในเอกสารที่ "vary" ตาม input ที่กรอกจริง)
+
+    mode: "contiguous" (default, ใช้เดินสายจริงได้) หรือ "free" (ไม่จำกัดลำดับ — สำหรับเทียบเท่านั้น
+    ห้ามใช้เดินสายจริง) — กำหนดว่า Section 4.1/4.2/4.6 (กลไก assign แถวเข้ากลุ่ม) อธิบายโมเดลไหน
+    ส่วนที่เหลือของเอกสาร (pairing, objective, solver, verification) เหมือนกันทั้งสอง mode
     """
     doc = Document()
+
+    if proof_context is not None:
+        time_limit_text = f"{proof_context['milp_result']['time_limit']} seconds (as configured for this run)"
+    else:
+        time_limit_text = f"{DEFAULT_TIME_LIMIT} seconds (default — no run of this variant yet in this session)"
 
     style = doc.styles["Normal"]
     style.font.name = "Calibri"
@@ -119,6 +130,31 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
     r.italic = True
     r.font.size = Pt(10.5)
     r.font.color.rgb = GREY
+
+    doc.add_paragraph()
+    variant_p = doc.add_paragraph()
+    variant_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if mode == "free":
+        variant_run = variant_p.add_run(
+            "MODEL VARIANT: Free Grouping (Unconstrained) — Comparison Only.\n"
+            "This variant removes the physical contiguity requirement so rows may be "
+            "grouped in any combination. It exists solely to measure how much better "
+            "the result could be if the physical layout imposed no ordering "
+            "constraint. The grouping in this document MUST NOT be used to wire the "
+            "actual installation — for that, see the Contiguous variant of this "
+            "document instead."
+        )
+        variant_run.bold = True
+        variant_run.font.color.rgb = RGBColor(0xB0, 0x00, 0x00)
+    else:
+        variant_run = variant_p.add_run(
+            "MODEL VARIANT: Contiguous Grouping — this is the variant used for the "
+            "actual physical installation, reflecting the constraint that a group "
+            "must be a consecutive run of rows in the real row layout."
+        )
+        variant_run.bold = True
+        variant_run.font.color.rgb = ACCENT
+    variant_run.font.size = Pt(10.5)
 
     doc.add_page_break()
 
@@ -199,44 +235,109 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
     _heading(doc, "4. Mathematical Formulation", level=1)
 
     _heading(doc, "4.1 Decision Variables", level=2)
-    _add_table(
-        doc,
-        ["Symbol", "Domain", "Meaning"],
-        [
-            ["t[i, g]", "Binary, g = 1..n_groups-1", "1 if row i belongs to a group with index <= g (cumulative-threshold encoding of contiguous grouping)"],
-            ["q[i, g, p]", "Binary", "1 if 2-source row i is placed in group g using UPS pair p"],
-            ["M", "Continuous, >= 0", "The worst-case (max) fault load across every group, every failed unit, and every surviving unit"],
-            ["y[i, g]", "Derived (not solved directly)", "Shorthand for t[i, g] - t[i, g-1] — \"row i belongs to group g\"; used in Sections 4.2, 4.3, and 4.6"],
-        ],
-        col_widths_cm=[3.2, 3.8, 8.5],
-    )
-    doc.add_paragraph(
-        "Rather than enumerating every possible cut point of the row sequence "
-        "(which would require an outer search loop on top of the MILP), grouping is "
-        "encoded directly as linear constraints using a cumulative-threshold "
-        "variable t[i, g], read as \"row i belongs to a group numbered g or lower.\" "
-        "Membership of row i in group g on its own is then the telescoping "
-        "difference t[i, g] - t[i, g-1] (with the convention t[i, 0] = 0 and "
-        "t[i, n_groups] = 1). This difference is referred to as y[i, g] wherever "
-        "used later in this document (Sections 4.2, 4.3, and 4.6) — it is not a "
-        "separate variable the solver optimizes, only a shorthand name for this "
-        "expression in t, kept inside a single linear model throughout."
-    )
+    if mode == "free":
+        _add_table(
+            doc,
+            ["Symbol", "Domain", "Meaning"],
+            [
+                ["x[i, g]", "Binary", "1 if row i is assigned to group g — a direct assignment variable, with no relationship required between row i's group and row i+1's group"],
+                ["q[i, g, p]", "Binary", "1 if 2-source row i is placed in group g using UPS pair p"],
+                ["M", "Continuous, >= 0", "The worst-case (max) fault load across every group, every failed unit, and every surviving unit"],
+                ["y[i, g]", "Derived (not solved directly)", "Shorthand for x[i, g] itself — \"row i belongs to group g\"; used in Sections 4.3, 4.4, and 4.6 so those sections read identically regardless of variant"],
+            ],
+            col_widths_cm=[3.2, 3.8, 8.5],
+        )
+        doc.add_paragraph(
+            "Unlike the Contiguous variant of this document, which encodes group "
+            "membership through a cumulative-threshold variable t[i, g] so that "
+            "contiguity can be expressed as a linear constraint, this Free variant "
+            "assigns each row to a group directly: x[i, g] = 1 means row i is placed "
+            "in group g, full stop, independent of where any other row lands. There "
+            "is deliberately no constraint tying row i's assignment to row i+1's — "
+            "rows may be grouped in any combination, ignoring the physical layout "
+            "order entirely. y[i, g] is simply x[i, g] under a shared name so that "
+            "Sections 4.3, 4.4, and 4.6 (fault-load coefficients, objective, unified "
+            "formulation) can be written once and apply unchanged to both variants."
+        )
+    else:
+        _add_table(
+            doc,
+            ["Symbol", "Domain", "Meaning"],
+            [
+                ["t[i, g]", "Binary, g = 1..n_groups-1", "1 if row i belongs to a group with index <= g (cumulative-threshold encoding of contiguous grouping)"],
+                ["q[i, g, p]", "Binary", "1 if 2-source row i is placed in group g using UPS pair p"],
+                ["M", "Continuous, >= 0", "The worst-case (max) fault load across every group, every failed unit, and every surviving unit"],
+                ["y[i, g]", "Derived (not solved directly)", "Shorthand for t[i, g] - t[i, g-1] — \"row i belongs to group g\"; used in Sections 4.2, 4.3, and 4.6"],
+            ],
+            col_widths_cm=[3.2, 3.8, 8.5],
+        )
+        doc.add_paragraph(
+            "Rather than enumerating every possible cut point of the row sequence "
+            "(which would require an outer search loop on top of the MILP), grouping is "
+            "encoded directly as linear constraints using a cumulative-threshold "
+            "variable t[i, g], read as \"row i belongs to a group numbered g or lower.\" "
+            "Membership of row i in group g on its own is then the telescoping "
+            "difference t[i, g] - t[i, g-1] (with the convention t[i, 0] = 0 and "
+            "t[i, n_groups] = 1). This difference is referred to as y[i, g] wherever "
+            "used later in this document (Sections 4.2, 4.3, and 4.6) — it is not a "
+            "separate variable the solver optimizes, only a shorthand name for this "
+            "expression in t, kept inside a single linear model throughout."
+        )
 
     _heading(doc, "4.2 Constraints", level=2)
-    doc.add_paragraph("Contiguity of groups (a group is a consecutive run of rows, not an arbitrary subset):")
-    _add_equation(doc, "t[i, g] >= t[i+1, g]      for every g, for every consecutive row pair (i, i+1)")
-    doc.add_paragraph("Nesting of the group-index thresholds:")
-    _add_equation(doc, "t[i, g] <= t[i, g+1]      for every row i, every g = 1 .. n_groups-2")
-    doc.add_paragraph("Every 2-source row, in whichever group it lands in, is assigned exactly one pair:")
-    _add_equation(doc, "sum over p of q[i, g, p]  =  (t[i, g] - t[i, g-1])      for every 2-source row i, every group g")
-    doc.add_paragraph(
-        "This last equality is what links the pairing variables to the grouping "
-        "variables without multiplying two binary variables together (which would "
-        "make the model non-linear); the right-hand side is simply the group-"
-        "membership indicator for row i in group g. There is no constraint requiring "
-        "a group to contain at least one row — see Section 6.5 for the implication."
-    )
+    if mode == "free":
+        doc.add_paragraph("Every row is assigned to exactly one group:")
+        _add_equation(doc, "sum over g of x[i, g]  =  1      for every row i")
+        doc.add_paragraph(
+            "Symmetry-breaking: with no constraint tying rows to a physical order, "
+            "any solution has (n_groups)! equally-valid relabelings — swapping which "
+            "group is called \"1\" versus \"2\" changes nothing physically, but the "
+            "solver treats each relabeling as a distinct binary vector to search. "
+            "This is addressed with a simple weight-ordering constraint, cheaper to "
+            "add than a full lexicographic symmetry-break and sufficient at the "
+            "problem sizes this variant is used for (fewer than 30 rows, 3-6 groups):"
+        )
+        _add_equation(doc, "sum_i kw_i * x[i, g]  >=  sum_i kw_i * x[i, g+1]      for every g = 1 .. n_groups-1")
+        doc.add_paragraph(
+            "This forces group total load to be non-increasing by group index, "
+            "eliminating most — but not all — of the relabeling symmetry: if two "
+            "groups happen to tie exactly on total kW, the ordering constraint does "
+            "not distinguish between them, so a small amount of symmetry can remain "
+            "in that edge case. This is an accepted, documented limitation rather "
+            "than an oversight."
+        )
+        doc.add_paragraph(
+            "The solver is also given a warm start where available: when this "
+            "variant is run after the Contiguous variant in the same session, the "
+            "Contiguous solution's grouping is re-labeled by descending group total "
+            "kW (so it satisfies the ordering constraint above) and supplied to CBC "
+            "as an initial incumbent, letting the search begin from a known-feasible "
+            "point rather than from scratch."
+        )
+        doc.add_paragraph("Every 2-source row, in whichever group it lands in, is assigned exactly one pair:")
+        _add_equation(doc, "sum over p of q[i, g, p]  =  x[i, g]      for every 2-source row i, every group g")
+        doc.add_paragraph(
+            "This equality links the pairing variables to the grouping variables "
+            "without multiplying two binary variables together (which would make "
+            "the model non-linear); the right-hand side is simply the group-"
+            "membership indicator for row i in group g. There is no constraint "
+            "requiring a group to contain at least one row — see Section 6.5 for the "
+            "implication."
+        )
+    else:
+        doc.add_paragraph("Contiguity of groups (a group is a consecutive run of rows, not an arbitrary subset):")
+        _add_equation(doc, "t[i, g] >= t[i+1, g]      for every g, for every consecutive row pair (i, i+1)")
+        doc.add_paragraph("Nesting of the group-index thresholds:")
+        _add_equation(doc, "t[i, g] <= t[i, g+1]      for every row i, every g = 1 .. n_groups-2")
+        doc.add_paragraph("Every 2-source row, in whichever group it lands in, is assigned exactly one pair:")
+        _add_equation(doc, "sum over p of q[i, g, p]  =  (t[i, g] - t[i, g-1])      for every 2-source row i, every group g")
+        doc.add_paragraph(
+            "This last equality is what links the pairing variables to the grouping "
+            "variables without multiplying two binary variables together (which would "
+            "make the model non-linear); the right-hand side is simply the group-"
+            "membership indicator for row i in group g. There is no constraint requiring "
+            "a group to contain at least one row — see Section 6.5 for the implication."
+        )
 
     _heading(doc, "4.3 Fault-Load Coefficients (Precise Definition)", level=2)
     doc.add_paragraph(
@@ -298,7 +399,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
         doc,
         ["Parameter", "Value", "Effect"],
         [
-            ["Time limit", "120 seconds", "CBC stops searching after this duration even if the gap has not reached zero"],
+            ["Time limit", time_limit_text, "CBC stops searching after this duration even if the gap has not reached zero"],
             ["Relative gap tolerance", "1% (0.01)", "CBC may also stop early, before the time limit, once it proves the current solution is within 1% of the true optimum"],
             ["Tie-break weight (epsilon)", "1e-5", "Selects among equally-optimal M values the one with lowest total fault load (Section 4.4)"],
         ],
@@ -313,37 +414,71 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
     )
 
     _heading(doc, "4.6 Unified Formulation", level=2)
-    doc.add_paragraph(
-        "Sections 4.1 through 4.5 build up the model piece by piece. Collected "
-        "into a single expression, using y[i, g] as shorthand for the row-i-in-"
-        "group-g membership indicator introduced in Section 4.1 "
-        "(y[i, g] = t[i, g] - t[i, g-1]), the entire optimization is:"
-    )
-    _add_equation(
-        doc,
-        "min      max      [ sum_2-source  q[i,g,p]\u00b7coeff[p,f,u]\u00b7kw_i   +   sum_4-source  y[i,g]\u00b7(kw_i/3) ]",
-        size=11,
-    )
-    _add_equation(doc, "t,q            g,f,u", size=10)
-    doc.add_paragraph("subject to:")
-    _add_equation(doc, "t[i, g] \u2208 {0, 1}")
-    _add_equation(doc, "t[i, g] \u2265 t[i+1, g]")
-    _add_equation(doc, "t[i, g] \u2264 t[i, g+1]")
-    doc.add_paragraph("and:")
-    _add_equation(doc, "sum over p of q[i, g, p]  =  y[i, g]")
-    doc.add_paragraph(
-        "This min-max form is the most compact statement of the problem: choose "
-        "grouping (t) and pairing (q) to make the worst load, over every group, "
-        "every possible failed unit, and every surviving unit, as small as "
-        "possible. It is mathematically equivalent to the epigraph form actually "
-        "solved (Section 4.4) — minimizing the maximum of a finite set of linear "
-        "expressions is standard practice rewritten by introducing the auxiliary "
-        "variable M and requiring M to be at least each expression, which is "
-        "exactly what turns this min-max statement into the linear constraints "
-        "\"M >= fault_load(g, f, u)\" that CBC actually solves. The min-max form "
-        "and the epigraph form are two notations for the same model, not two "
-        "different models."
-    )
+    if mode == "free":
+        doc.add_paragraph(
+            "Sections 4.1 through 4.5 build up the model piece by piece. Collected "
+            "into a single expression, using y[i, g] as shorthand for x[i, g] "
+            "introduced in Section 4.1, the entire optimization is:"
+        )
+        _add_equation(
+            doc,
+            "min      max      [ sum_2-source  q[i,g,p]\u00b7coeff[p,f,u]\u00b7kw_i   +   sum_4-source  y[i,g]\u00b7(kw_i/3) ]",
+            size=11,
+        )
+        _add_equation(doc, "x,q            g,f,u", size=10)
+        doc.add_paragraph("subject to:")
+        _add_equation(doc, "x[i, g] \u2208 {0, 1}")
+        _add_equation(doc, "sum over g of x[i, g]  =  1")
+        _add_equation(doc, "sum_i kw_i * x[i, g]  \u2265  sum_i kw_i * x[i, g+1]      (weight-ordering symmetry-break)")
+        doc.add_paragraph("and:")
+        _add_equation(doc, "sum over p of q[i, g, p]  =  y[i, g]")
+        doc.add_paragraph(
+            "This min-max form is the most compact statement of the problem: choose "
+            "grouping (x) and pairing (q) to make the worst load, over every group, "
+            "every possible failed unit, and every surviving unit, as small as "
+            "possible. It is mathematically equivalent to the epigraph form actually "
+            "solved (Section 4.4) \u2014 minimizing the maximum of a finite set of linear "
+            "expressions is standard practice rewritten by introducing the auxiliary "
+            "variable M and requiring M to be at least each expression, which is "
+            "exactly what turns this min-max statement into the linear constraints "
+            "\"M >= fault_load(g, f, u)\" that CBC actually solves. The only "
+            "difference from the Contiguous variant's unified formulation is the "
+            "grouping variable itself (x instead of t) and the weight-ordering "
+            "constraint replacing contiguity \u2014 everything downstream of grouping "
+            "(pairing, objective) is identical."
+        )
+    else:
+        doc.add_paragraph(
+            "Sections 4.1 through 4.5 build up the model piece by piece. Collected "
+            "into a single expression, using y[i, g] as shorthand for the row-i-in-"
+            "group-g membership indicator introduced in Section 4.1 "
+            "(y[i, g] = t[i, g] - t[i, g-1]), the entire optimization is:"
+        )
+        _add_equation(
+            doc,
+            "min      max      [ sum_2-source  q[i,g,p]\u00b7coeff[p,f,u]\u00b7kw_i   +   sum_4-source  y[i,g]\u00b7(kw_i/3) ]",
+            size=11,
+        )
+        _add_equation(doc, "t,q            g,f,u", size=10)
+        doc.add_paragraph("subject to:")
+        _add_equation(doc, "t[i, g] \u2208 {0, 1}")
+        _add_equation(doc, "t[i, g] \u2265 t[i+1, g]")
+        _add_equation(doc, "t[i, g] \u2264 t[i, g+1]")
+        doc.add_paragraph("and:")
+        _add_equation(doc, "sum over p of q[i, g, p]  =  y[i, g]")
+        doc.add_paragraph(
+            "This min-max form is the most compact statement of the problem: choose "
+            "grouping (t) and pairing (q) to make the worst load, over every group, "
+            "every possible failed unit, and every surviving unit, as small as "
+            "possible. It is mathematically equivalent to the epigraph form actually "
+            "solved (Section 4.4) \u2014 minimizing the maximum of a finite set of linear "
+            "expressions is standard practice rewritten by introducing the auxiliary "
+            "variable M and requiring M to be at least each expression, which is "
+            "exactly what turns this min-max statement into the linear constraints "
+            "\"M >= fault_load(g, f, u)\" that CBC actually solves. The min-max form "
+            "and the epigraph form are two notations for the same model, not two "
+            "different models."
+        )
 
     # ================= 5. SOLUTION METHOD =================
     _heading(doc, "5. Solution Method: LP Relaxation and Branch-and-Bound", level=1)
@@ -560,7 +695,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
         doc,
         ["Parameter", "Symbol / Name", "Value", "Defined in"],
         [
-            ["Solver time limit", "DEFAULT_TIME_LIMIT", "120 seconds", "Section 4.5"],
+            ["Solver time limit", "DEFAULT_TIME_LIMIT (user-configurable)", time_limit_text, "Section 4.5"],
             ["Solver relative gap tolerance", "DEFAULT_GAP_REL", "0.01 (1%)", "Section 4.5"],
             ["Objective tie-break weight", "EPS_TIE_BREAK", "1e-5", "Section 4.4"],
             ["Bottleneck-group floating-point tolerance", "BOTTLENECK_TOL", "1e-6", "Sections 4.3, 6.3"],
@@ -699,7 +834,8 @@ def build_optimization_proof_docx(proof_context: dict | None = None) -> io.Bytes
             "at generation time."
             if proof_context is not None
             else "This document describes methodology only and contains no "
-            "project-specific data (no case had been run at generation time)."
+            f"project-specific data (this {mode} variant had not been run in this "
+            "session at generation time)."
         )
     )
     r = footer.add_run(footer_text)
