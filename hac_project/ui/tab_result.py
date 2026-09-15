@@ -8,7 +8,7 @@ from constants import UPS_UNITS, GROUP_BADGE_COLORS
 from engine.pairing import (
     parse_rack_layout, build_row_units, compute_normal_loads, compute_fault_loads,
 )
-from engine.optimization import solve_pairing_milp
+from engine.optimization import DEFAULT_TIME_LIMIT, solve_pairing_milp, solve_pairing_milp_free
 from ui.svg_diagram import build_hac_svg
 
 # ── สีสำหรับตาราง Load Breakdown ─────────────────────────────
@@ -147,12 +147,24 @@ def render():
         st.stop()
 
     n_groups = st.session_state.get("n_groups", 3)
+    time_limit = st.session_state.get("time_limit", DEFAULT_TIME_LIMIT)
+    mode = st.session_state.get("optimization_mode", "contiguous")
 
     # ── ENGINE (MILP: grouping + pairing รวมเป็นโมเดลเดียว, minimize max-fail-load) ──
     row_units = build_row_units(edited_df)
-    milp_result = solve_pairing_milp(row_units, n_groups)
+    if mode == "free":
+        warm_start_groups = st.session_state.get("last_contiguous_groups")
+        milp_result = solve_pairing_milp_free(
+            row_units, n_groups, time_limit=time_limit, warm_start_groups=warm_start_groups
+        )
+    else:
+        milp_result = solve_pairing_milp(row_units, n_groups, time_limit=time_limit)
+        st.session_state.last_contiguous_groups = milp_result["groups"]
     st.session_state.milp_result = milp_result  # ให้ tab_proof.py ใช้ต่อ (ไม่ solve ซ้ำ)
     groups = milp_result["groups"]
+
+    if mode == "free":
+        st.warning("🔓 **โหมดไม่จำกัดลำดับ** — ผลนี้ใช้เทียบเฉยๆ ว่าถ้าไม่มีข้อจำกัดทางกายภาพจะดีกว่าปัจจุบันแค่ไหน ห้ามเอาไปเดินสายจริง")
 
     # ── SECTION 1: GROUPING ──────────────────────────────────────
     st.header("1 — การแบ่งกลุ่ม PTU Groups")

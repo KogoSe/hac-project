@@ -7,6 +7,7 @@ import os
 import openpyxl
 
 from constants import SOURCE_OPTIONS
+from engine.optimization import DEFAULT_TIME_LIMIT
 from engine.pairing import parse_rack_layout
 from ui.svg_diagram import build_hac_svg
 
@@ -165,6 +166,12 @@ def render():
     st.subheader("⚙️ ตั้งค่า Optimization")
     n_groups = st.number_input("จำนวนกลุ่ม Generator (default = 3)", min_value=2, max_value=6, value=3, step=1)
     st.session_state.n_groups = int(n_groups)
+    time_limit = st.number_input(
+        "Time Limit ต่อการ solve (วินาที)",
+        min_value=5, max_value=1800, value=DEFAULT_TIME_LIMIT, step=5,
+        help="ใช้ร่วมกันทั้งปุ่ม Contiguous และ Free — เวลาสูงสุดที่ solver รอก่อนคืนคำตอบที่ดีที่สุด ณ จุดนั้น",
+    )
+    st.session_state.time_limit = int(time_limit)
 
     # Diagram
     st.divider()
@@ -184,9 +191,18 @@ def render():
         st.caption("ขอบสีม่วง = 4-source | ตัวเลขในแต่ละตู้คือ kW จริง | สีพื้นหลังแถวจะแสดงหลังคำนวณ")
 
     st.divider()
-    if st.button("🚀 คำนวณ Pairing Optimization", type="primary", use_container_width=True):
-        st.session_state.run_optimization = True
-        st.success("✅ คำนวณเสร็จแล้ว — เปิดแท็บ ผลลัพธ์ เพื่อดูผล")
+    col_run1, col_run2 = st.columns(2)
+    with col_run1:
+        if st.button("🔒 คำนวณ Pairing (Contiguous)", type="primary", use_container_width=True):
+            st.session_state.run_optimization = True
+            st.session_state.optimization_mode = "contiguous"
+            st.success("✅ คำนวณเสร็จแล้ว — เปิดแท็บ ผลลัพธ์ เพื่อดูผล")
+    with col_run2:
+        if st.button("🔓 คำนวณ Pairing (ไม่จำกัดลำดับ)", use_container_width=True):
+            st.session_state.run_optimization = True
+            st.session_state.optimization_mode = "free"
+            st.success("✅ คำนวณเสร็จแล้ว (โหมดไม่จำกัดลำดับ — ใช้เทียบเท่านั้น ห้ามเดินสายจริง) — เปิดแท็บ ผลลัพธ์ เพื่อดูผล")
+    st.caption("🔓 โหมด 'ไม่จำกัดลำดับ' จับกลุ่มข้ามหัวกันได้อิสระ ไม่มีข้อจำกัดทางกายภาพ — ใช้เป็นเครื่องมือเทียบว่าดีกว่าปัจจุบันแค่ไหนเท่านั้น ห้ามเอาไปเดินสายจริง")
 
 
 

@@ -44,6 +44,12 @@ def render():
     groups = milp_result["groups"]
     n_groups = len(groups)
 
+    mode = milp_result.get("mode")
+    if mode == "free":
+        st.caption("🔓 Free (ไม่จำกัดลำดับ — สำหรับเทียบเท่านั้น ห้ามใช้เดินสายจริง)")
+    elif mode == "contiguous":
+        st.caption("🔒 Contiguous")
+
     # ── SECTION 1: SOLVER STATUS ──────────────────────────────────
     st.header("1 — สถานะ Solver")
     c1, c2, c3 = st.columns(3)

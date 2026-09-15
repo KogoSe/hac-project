@@ -42,6 +42,12 @@ def render():
         st.info("กดปุ่ม **คำนวณ Pairing Optimization** ในแท็บกรอกข้อมูลก่อน")
         st.stop()
 
+    mode = st.session_state.get("milp_result", {}).get("mode")
+    if mode == "free":
+        st.caption("🔓 Free (ไม่จำกัดลำดับ — สำหรับเทียบเท่านั้น ห้ามใช้เดินสายจริง)")
+    elif mode == "contiguous":
+        st.caption("🔒 Contiguous")
+
     # ── SECTION: ASSUMPTIONS INPUT ──────────────────────────────
     st.subheader("ค่า Assumption")
     with st.expander("⚙️ แก้ไข Assumption & Standard Sizes", expanded=True):

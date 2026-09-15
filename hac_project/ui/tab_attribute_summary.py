@@ -35,6 +35,12 @@ def render():
     st.header("🧮 สรุปการคำนวณ Attribute (PTU_FIX)")
     st.caption("โชว์ที่มาของทุก attribute ก่อนถูกนำไปใช้ใน tab SLD Attributes — แก้ manual ที่ tab SLD ได้เสมอถ้าไม่พอใจค่านี้")
 
+    mode = st.session_state.get("milp_result", {}).get("mode")
+    if mode == "free":
+        st.caption("🔓 Free (ไม่จำกัดลำดับ — สำหรับเทียบเท่านั้น ห้ามใช้เดินสายจริง)")
+    elif mode == "contiguous":
+        st.caption("🔒 Contiguous")
+
     group_calcs = st.session_state.get("sizing_group_calcs")
     if not group_calcs:
         st.info("ไปที่แท็บ **Equipment Sizing** ก่อนอย่างน้อย 1 ครั้ง เพื่อให้มีค่า kVA/kW/Ampere ให้คำนวณต่อ")

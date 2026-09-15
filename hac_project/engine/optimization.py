@@ -234,6 +234,182 @@ def solve_pairing_milp(
         "solver_lower_bound": solver_lower_bound,
         "theoretical_lower_bound": theoretical_lb,
         "global_theoretical_lower_bound": global_theoretical_lb,
+        "mode": "contiguous",
+    }
+
+
+def solve_pairing_milp_free(
+    row_units: list[dict],
+    n_groups: int,
+    time_limit: int = DEFAULT_TIME_LIMIT,
+    gap_rel: float = DEFAULT_GAP_REL,
+    warm_start_groups: list[list[dict]] | None = None,
+) -> dict:
+    """
+    เหมือน solve_pairing_milp() ทุกประการ ยกเว้น "วิธี assign แถวเข้ากลุ่ม" — ตัวนี้ไม่บังคับ
+    contiguous cut ใช้ x[i][g] เป็น binary assignment ตรงๆ (แถวไหนไปกลุ่มไหนก็ได้ ข้ามหัวกันได้)
+    เพื่อเป็น "เพดานทางทฤษฎี" เทียบกับ solve_pairing_milp() ที่ต้อง contiguous ตามข้อจำกัดทางกายภาพ
+    จริง — ผลลัพธ์จากฟังก์ชันนี้ *ห้ามเอาไปเดินสายจริง*
+
+    Symmetry-breaking แบบง่าย (ไม่ full lexicographic — รับทราบว่าตัด symmetry ไม่สมบูรณ์
+    กรณี tie total_kw พอดี แต่ยอมรับได้ที่ scale งานนี้):
+      - weight ordering: total_kw(group 1) >= total_kw(group 2) >= ... >= total_kw(group k)
+      - warm-start: ถ้ามี warm_start_groups (เช่นจาก contiguous solution) ให้ set เป็นค่าเริ่มต้น
+        ของ x[i][g] ให้ CBC มี incumbent ตั้งแต่แรก
+    """
+    n = len(row_units)
+    two_idx = [i for i, r in enumerate(row_units) if r["source_type"] != "4-source"]
+    four_idx = [i for i, r in enumerate(row_units) if r["source_type"] == "4-source"]
+
+    prob = pulp.LpProblem("hac_grouping_pairing_free", pulp.LpMinimize)
+
+    # ── free assignment: x[i][g] = "แถว i อยู่กลุ่ม g" ไม่มีข้อจำกัดเรื่องลำดับ ──
+    x = {}
+    for i in range(n):
+        for g in range(1, n_groups + 1):
+            x[i, g] = pulp.LpVariable(f"x_{i}_{g}", cat="Binary")
+        prob += pulp.lpSum(x[i, g] for g in range(1, n_groups + 1)) == 1
+
+    def y_expr(i, g):
+        return x[i, g]
+
+    # ── weight ordering symmetry-break: total_kw(g) >= total_kw(g+1) ──
+    for g in range(1, n_groups):
+        prob += (
+            pulp.lpSum(row_units[i]["kw"] * x[i, g] for i in range(n))
+            >= pulp.lpSum(row_units[i]["kw"] * x[i, g + 1] for i in range(n))
+        )
+
+    # ── pairing: q[i][g][p] binary ตรงๆ ผูกกับ grouping ผ่าน equality (ไม่ bilinear) ──
+    q = {}
+    for i in two_idx:
+        for g in range(1, n_groups + 1):
+            for p in PAIRS:
+                q[i, g, p] = pulp.LpVariable(f"q_{i}_{g}_{p}", cat="Binary")
+            prob += pulp.lpSum(q[i, g, p] for p in PAIRS) == y_expr(i, g)
+
+    # ── objective: M >= โหลดทุกจุดที่เป็นไปได้ ──
+    M = pulp.LpVariable("M", lowBound=0)
+    all_load_terms = []
+    for g in range(1, n_groups + 1):
+        for f in UPS_UNITS:
+            for u in UPS_UNITS:
+                if u == f:
+                    continue
+                terms = []
+                for i in two_idx:
+                    for p in PAIRS:
+                        c = COEFF[p][f][u]
+                        if c != 0.0:
+                            terms.append(c * row_units[i]["kw"] * q[i, g, p])
+                for i in four_idx:
+                    terms.append((row_units[i]["kw"] / 3) * y_expr(i, g))
+                expr = pulp.lpSum(terms)
+                prob += M >= expr
+                all_load_terms.append(expr)
+
+    prob += M + EPS_TIE_BREAK * pulp.lpSum(all_load_terms)
+
+    # ── warm start: ตรึงค่าเริ่มต้นของ x[i][g] จาก grouping ที่ให้มา (เช่น contiguous solution) ──
+    # สำคัญ: ต้อง relabel กลุ่มตาม total_kw มาก->น้อยก่อน ไม่งั้นจะขัดกับ weight-ordering
+    # constraint ด้านบน (contiguous ไม่มีเหตุผลอะไรที่กลุ่มจะเรียงตาม weight พอดี) แล้ว CBC
+    # จะทิ้ง warm start นั้นเงียบๆ เพราะ infeasible ตั้งแต่แรก
+    warm_start_used = False
+    if warm_start_groups is not None:
+        groups_sorted = sorted(
+            warm_start_groups, key=lambda grp: sum(r["kw"] for r in grp), reverse=True
+        )
+        row_to_group = {}
+        for g_idx, grp in enumerate(groups_sorted, 1):
+            for row in grp:
+                key = (row["hac"], row["side"])
+                row_to_group[key] = g_idx
+        # map key -> row index ใน row_units (order เดียวกับที่ build_row_units คืนมา)
+        key_to_i = {(r["hac"], r["side"]): i for i, r in enumerate(row_units)}
+        if len(row_to_group) == n and all(k in key_to_i for k in row_to_group):
+            for key, g_assigned in row_to_group.items():
+                i = key_to_i[key]
+                for g in range(1, n_groups + 1):
+                    x[i, g].setInitialValue(1.0 if g == g_assigned else 0.0)
+            warm_start_used = True
+
+    import platform, tempfile, os
+    log_fd, log_path = tempfile.mkstemp(suffix=".log")
+    os.close(log_fd)
+    # PuLP: on Windows, warmStart is silently ignored unless keepFiles=True (writes the
+    # .mps/.sol/.mst files next to lp.name in cwd instead of a tmp dir) — we clean them up below.
+    keep_files = warm_start_used and platform.system() == "Windows"
+    solver = pulp.PULP_CBC_CMD(
+        msg=0, timeLimit=time_limit, gapRel=gap_rel, logPath=log_path,
+        warmStart=warm_start_used, keepFiles=keep_files,
+    )
+    prob.solve(solver)
+
+    log_text = ""
+    try:
+        with open(log_path, "r", errors="ignore") as f:
+            log_text = f.read()
+    except OSError:
+        pass
+    finally:
+        try:
+            os.remove(log_path)
+        except OSError:
+            pass
+
+    if keep_files:
+        for ext in ("lp", "mps", "sol", "mst"):
+            try:
+                os.remove(f"{prob.name}-pulp.{ext}")
+            except OSError:
+                pass
+
+    solver_info = _parse_cbc_log(log_text)
+    if solver_info["proven_optimal"]:
+        status_label = "Optimal (proven)"
+    elif solver_info["time_limited"]:
+        gap_pct = solver_info["gap"] * 100 if solver_info["gap"] is not None else None
+        status_label = f"Time-limited (gap {gap_pct:.2f}%)" if gap_pct is not None else "Time-limited"
+    else:
+        status_label = pulp.LpStatus[prob.status]
+
+    # ── extract solution ──
+    groups_out = [[] for _ in range(n_groups)]
+    for i in range(n):
+        for g in range(1, n_groups + 1):
+            val = y_expr(i, g)
+            v = pulp.value(val) if not isinstance(val, int) else val
+            if v is not None and v > 0.5:
+                row = dict(row_units[i])
+                if row["source_type"] == "4-source":
+                    row["pair"] = "ABCD"
+                else:
+                    for p in PAIRS:
+                        if pulp.value(q[i, g, p]) > 0.5:
+                            row["pair"] = p
+                            break
+                groups_out[g - 1].append(row)
+                break
+
+    objective_value = pulp.value(M)
+
+    theoretical_lb = max(sum(r["kw"] for r in grp) / 3 for grp in groups_out) if groups_out else 0.0
+    total_kw_all = sum(r["kw"] for r in row_units)
+    global_theoretical_lb = (total_kw_all / n_groups) / 3
+
+    solver_lower_bound = solver_info["solver_lower_bound"]
+    if solver_lower_bound is None and solver_info["proven_optimal"]:
+        solver_lower_bound = objective_value
+
+    return {
+        "groups": groups_out,
+        "status": status_label,
+        "objective": objective_value,
+        "gap": solver_info["gap"] if solver_info["gap"] is not None else (0.0 if solver_info["proven_optimal"] else None),
+        "solver_lower_bound": solver_lower_bound,
+        "theoretical_lower_bound": theoretical_lb,
+        "global_theoretical_lower_bound": global_theoretical_lb,
+        "mode": "free",
     }
 
 

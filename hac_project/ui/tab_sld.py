@@ -170,6 +170,12 @@ def render():
     st.header("📐 SLD Attributes")
     st.caption("กรอก/แก้ไข Attribute สำหรับสร้าง Single Line Diagram | ค่า default ตามรูปแบบมาตรฐาน")
 
+    mode = st.session_state.get("milp_result", {}).get("mode")
+    if mode == "free":
+        st.caption("🔓 Free (ไม่จำกัดลำดับ — สำหรับเทียบเท่านั้น ห้ามใช้เดินสายจริง)")
+    elif mode == "contiguous":
+        st.caption("🔒 Contiguous")
+
     # ── เลือกกลุ่ม Generator ────────────────────────────────────
     n_grp = st.session_state.get("n_groups", 3)
     grp_options = [f"Group {i}" for i in range(1, n_grp + 1)]
