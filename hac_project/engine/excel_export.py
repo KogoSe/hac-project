@@ -464,7 +464,8 @@ def build_excel_report(groups: list, cfg: dict, group_calcs: list) -> bytes:
     groups       : list ของ list[dict] — ผลจาก milp_result["groups"] (1 list ต่อ 1 PTU group)
     cfg          : st.session_state.sizing_cfg (assumption ล่าสุด)
     group_calcs  : st.session_state.sizing_group_calcs -> [{"gi", "chain", "equip"}, ...]
-                   (equip ต้องเป็นค่าที่ unify_common_sizes() แล้ว — ของเดิมจาก PASS 1 ใน tab_sizing.py)
+                   (equip เป็นขนาดของกลุ่มนั้นๆ อิสระจากกลุ่มอื่น — group ใครกลุ่มมัน,
+                   ไม่ unify ข้ามกลุ่มแล้ว — จาก PASS 1 ใน tab_sizing.py)
 
     คืนค่าเป็น bytes ของไฟล์ .xlsx พร้อมส่งให้ st.download_button ใช้ตรงๆ
     """

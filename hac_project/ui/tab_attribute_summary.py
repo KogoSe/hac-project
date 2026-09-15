@@ -2,13 +2,19 @@
 TAB: สรุปการคำนวณ Attribute — โชว์ว่าแต่ละ attribute ใน PTU_FIX มาจากไหน/คำนวณยังไง
 ก่อนถูกส่งไปที่ tab SLD Attributes (auto-fill ที่นั่นแล้ว — ยังแก้ manual ทับได้เหมือนเดิม)
 
-Section 1: Ground Cable Sizing (BS 7671) — คำนวณสดในหน้านี้ ผลถูกเก็บใน
-           st.session_state.ground_cfg / ground_result ให้ tab_sld อ่านไปใช้
+มีตัวเลือกกลุ่ม Generator Group เหมือน tab SLD — ทุกอย่างในหน้านี้ (RMU, Ground Cable,
+ตารางสรุป attribute) คำนวณจาก trafo_kva/gen_kw ของกลุ่มที่เลือกอยู่เท่านั้น
+("group ใครกลุ่มมัน" ไม่มีค่ากลางรวมทุกกลุ่มแล้ว)
+
+Section 0: RMU / MV Ring — คำนวณจาก trafo_kva ของกลุ่มที่เลือกอยู่
+Section 1: Ground Cable Sizing (BS 7671) — คำนวณสดในหน้านี้ ของกลุ่มที่เลือกอยู่ ผลถูกเก็บใน
+           st.session_state.ground_cfg (assumption ร่วมทุกกลุ่ม) และ
+           st.session_state.ground_result[gi] (ผลคำนวณต่อกลุ่ม) ให้ tab_sld อ่านไปใช้
            แยกคำนวณ 2 ฐานอิสระกัน:
              - ฐาน Transformer -> RMU_S_GROUNDCABLE, TX_S_GROUNDCABLE
              - ฐาน Generator   -> GEN_S_GROUNDCABLE, PTU_GROUNDCABLE
            (gen_pf ในนี้ = ตัวเดียวกับที่ tab_sld ใช้คำนวณ GEN_S_RATING/GEN_S_BUSBARRATING/ACB — sync กันแล้ว)
-Section 2: ตารางสรุปทุก attribute — คำนวณ / default พร้อมสูตร
+Section 2: ตารางสรุปทุก attribute — คำนวณ / default พร้อมสูตร ของกลุ่มที่เลือกอยู่
 """
 import streamlit as st
 import pandas as pd
@@ -29,21 +35,38 @@ def render():
     st.header("🧮 สรุปการคำนวณ Attribute (PTU_FIX)")
     st.caption("โชว์ที่มาของทุก attribute ก่อนถูกนำไปใช้ใน tab SLD Attributes — แก้ manual ที่ tab SLD ได้เสมอถ้าไม่พอใจค่านี้")
 
-    sizes = st.session_state.get("sizing_common_sizes")
-    if not sizes or any(sizes.get(k) is None for k in ("trafo", "gen", "busway", "it_busbar", "before_ups_busbar")):
+    group_calcs = st.session_state.get("sizing_group_calcs")
+    if not group_calcs:
         st.info("ไปที่แท็บ **Equipment Sizing** ก่อนอย่างน้อย 1 ครั้ง เพื่อให้มีค่า kVA/kW/Ampere ให้คำนวณต่อ")
         st.stop()
 
-    trafo_kva = sizes["trafo"]
-    gen_kw    = sizes["gen"]
+    # ── เลือกกลุ่ม Generator (แต่ละกลุ่มมีขนาดของตัวเองอิสระกัน) ──────────
+    n_grp = st.session_state.get("n_groups", 3)
+    grp_options = [f"Group {i}" for i in range(1, n_grp + 1)]
+    selected_grp = st.selectbox("เลือก Generator Group", options=grp_options, key="attr_summary_grp_select")
+    gi = grp_options.index(selected_grp) + 1
+
+    if gi > len(group_calcs):
+        st.info("ไปที่แท็บ **Equipment Sizing** ก่อนเพื่อคำนวณกลุ่มนี้")
+        st.stop()
+
+    sizes = group_calcs[gi - 1]["equip"]
+    required_keys = ("trafo", "gen", "busway", "it_busbar", "before_ups_busbar")
+    if any(sizes.get(k, {}).get("size") is None for k in required_keys):
+        st.info(f"⚠️ {selected_grp} ไม่มี size รองรับ — ตรวจสอบ Standard Size List ที่แท็บ Equipment Sizing")
+        st.stop()
+
+    trafo_kva = sizes["trafo"]["size"]
+    gen_kw    = sizes["gen"]["size"]
 
 
         # ═══════════════════════════════════════════════════════════
     # SECTION 0 — RMU / MV RING SYSTEM ASSUMPTION
     # ═══════════════════════════════════════════════════════════
     st.subheader("0️⃣ RMU / MV Ring System — Assumption")
-    st.caption("ใช้คำนวณ RMU_CB / RMU_BUSBAR / RMU_LEFT_CB / RMU_RIGHT_LB — ring 4 ตัว "
-               "ได้ขนาดเดียวกันหมดเพราะ Transformer unify แล้ว | เลือกได้แค่ 200A หรือ 630A")
+    st.caption(f"ใช้คำนวณ RMU_CB / RMU_BUSBAR / RMU_LEFT_CB / RMU_RIGHT_LB ของ {selected_grp} — "
+               "แต่ละกลุ่มมี Transformer ของตัวเองอิสระกัน RMU แต่ละกลุ่มจึงอาจได้ขนาดไม่เท่ากันได้ "
+               "| เลือกได้แค่ 200A หรือ 630A")
 
     with st.expander("⚙️ Assumption — RMU MV Voltage", expanded=True):
         c1, c2 = st.columns(2)
@@ -72,7 +95,7 @@ def render():
     # SECTION 1 — GROUND CABLE SIZING (BS 7671)
     # ═══════════════════════════════════════════════════════════
     st.subheader("1️⃣ Ground Cable Sizing — BS 7671  (S = I√t / k)")
-    st.caption("แยกคำนวณ 2 ฐาน — ฐาน Transformer ใช้กับ RMU_S_GROUNDCABLE / TX_S_GROUNDCABLE, "
+    st.caption(f"ของ {selected_grp} — แยกคำนวณ 2 ฐาน — ฐาน Transformer ใช้กับ RMU_S_GROUNDCABLE / TX_S_GROUNDCABLE, "
                "ฐาน Generator ใช้กับ GEN_S_GROUNDCABLE / PTU_GROUNDCABLE")
 
     with st.expander("⚙️ Assumption — Ground Cable", expanded=True):
@@ -108,12 +131,15 @@ def render():
         pct_z=pct_z, fault_margin_pct=fault_margin, fault_duration_sec=fault_t,
         k_value=k_value, cable_sizes=cable_sizes, n_sets=int(n_sets),
     )
-    # เก็บผลไว้ให้ tab_sld ดึงไปใช้ auto-fill — ground_result เป็น dict {"trafo": ..., "gen": ...}
+    # เก็บผลไว้ให้ tab_sld ดึงไปใช้ auto-fill — ground_cfg (assumption) ใช้ร่วมกันทุกกลุ่ม
+    # ground_result เก็บแยกต่อกลุ่ม {gi: {"trafo": ..., "gen": ...}, ...} เพราะ trafo_kva/gen_kw
+    # ต่างกันไปตามกลุ่ม ("group ใครกลุ่มมัน")
     st.session_state.ground_cfg = {
         "gen_pf": gen_pf, "pct_z": pct_z, "fault_margin": fault_margin,
         "fault_t": fault_t, "k_value": k_value, "cable_sizes": cable_sizes, "n_sets": int(n_sets),
     }
-    st.session_state.ground_result = ground_result
+    st.session_state.setdefault("ground_result", {})
+    st.session_state.ground_result[gi] = ground_result
 
     def _render_ground_result(label: str, result: dict, attrs_note: str):
         st.markdown(f"**{label}** — ใช้กับ {attrs_note}")
@@ -143,13 +169,13 @@ def render():
     # ═══════════════════════════════════════════════════════════
     # SECTION 2 — สรุปทุก Attribute (คำนวณ / default)
     # ═══════════════════════════════════════════════════════════
-    st.subheader("2️⃣ สรุปที่มาของทุก Attribute (PTU_FIX)")
+    st.subheader(f"2️⃣ สรุปที่มาของทุก Attribute (PTU_FIX) — {selected_grp}")
 
-    smart_defaults = compute_smart_ptu_fix_defaults()
+    smart_defaults = compute_smart_ptu_fix_defaults(gi)
 
     # อธิบายสูตรของแต่ละ attribute ที่มาจาก Equipment Sizing (คำนวณไว้แล้วใน tab_sld.py)
     FORMULA_NOTES = {
-        "UPS_RATING":          "จาก sizing_common_sizes['ups'] โดยตรง",
+        "UPS_RATING":          f"จากขนาด UPS ของ {selected_grp} โดยตรง (sizing_group_calcs)",
         "TX_S_RATING":         "kVA ของ Transformer → MVA",
         "GEN_S_RATING":        f"kW ของ Generator → MW/MVA (ใช้ PF={gen_pf:.2f} ตัวเดียวกับที่กรอกด้านบน)",
         "TX_S_BUSWAY":         "Design Ampere ของ PTU busway (จาก Load Chain, tab Equipment Sizing)",
@@ -182,7 +208,7 @@ def render():
         "RMU_RIGHT_LB": "เท่ากับ RMU_BUSBAR (Load Break switch สำหรับเชื่อม ring กับ RMU ข้างเคียง)",
     }
 
-    ground = st.session_state.get("ground_result")
+    ground = st.session_state.get("ground_result", {}).get(gi)
     if ground:
         from engine.earthing import format_groundcable_text
         default_dict = {n: v for n, v in PTU_FIX_DEFAULTS}

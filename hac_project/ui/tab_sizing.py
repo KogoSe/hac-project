@@ -6,7 +6,7 @@ import pandas as pd
 
 from constants import UPS_UNITS, GROUP_BADGE_COLORS
 from engine.pairing import compute_normal_loads, compute_fault_loads
-from engine.sizing import compute_load_chain, select_equipment, unify_common_sizes, select_it_and_preups_busbar
+from engine.sizing import compute_load_chain, select_equipment, select_it_and_preups_busbar
 from engine.excel_export import build_excel_report
 
 
@@ -113,25 +113,27 @@ def render():
         equip.update(select_it_and_preups_busbar(chain, cfg))   # ← เพิ่มบรรทัดนี้
         group_calcs.append({"gi": gi, "chain": chain, "equip": equip})
 
-    # ── หาขนาดใหญ่สุดของ UPS / Generator / Transformer / Busway ร่วมกันทุกกลุ่ม ──
-        common_sizes = unify_common_sizes(
-        [gc["equip"] for gc in group_calcs],
-        keys=("ups", "gen", "trafo", "busway", "it_busbar", "before_ups_busbar"),
-    )
-
     # เก็บผลไว้ให้ tab อื่น (เช่น tab 4 SLD) เรียกใช้ได้ต่อ โดยไม่ต้องคำนวณซ้ำ
+    # แต่ละกลุ่มเลือกขนาดของตัวเองอิสระกัน (ไม่ unify ข้ามกลุ่มแล้ว)
     st.session_state.sizing_group_calcs = group_calcs
-    st.session_state.sizing_common_sizes = common_sizes
 
-    st.info(
-        f"🔧 ใช้ขนาดเดียวกันทุกกลุ่ม (เลือกจากค่าที่มากสุด) — "
-        f"UPS: {common_sizes['ups']:,.0f} kW  |  "
-        f"Transformer: {common_sizes['trafo']:,.0f} kVA  |  "
-        f"Generator: {common_sizes['gen']:,.0f} kW  |  "
-        f"Busway: {common_sizes['busway']:,.0f} A"
-        if all(v is not None for v in common_sizes.values())
-        else "⚠️ บางกลุ่มไม่มี size รองรับ — ตรวจสอบ Standard Size List"
-    )
+    per_group_lines = []
+    any_missing = False
+    for gc in group_calcs:
+        eq = gc["equip"]
+        if any(eq[k]["size"] is None for k in ("ups", "gen", "trafo", "busway")):
+            any_missing = True
+            continue
+        per_group_lines.append(
+            f"G{gc['gi']}: UPS {eq['ups']['size']:,.0f} kW | "
+            f"Trafo {eq['trafo']['size']:,.0f} kVA | "
+            f"Gen {eq['gen']['size']:,.0f} kW | "
+            f"Busway {eq['busway']['size']:,.0f} A"
+        )
+
+    if any_missing:
+        st.warning("⚠️ บางกลุ่มไม่มี size รองรับ — ตรวจสอบ Standard Size List")
+    st.info("🔧 แต่ละกลุ่มเลือกขนาดของตัวเองอิสระกัน (group ใครกลุ่มมัน)\n\n" + "\n\n".join(per_group_lines))
 
     # ── PASS 2: render ผลลัพธ์ที่ override ขนาดเป็นค่าร่วมแล้ว ──
     for gc in group_calcs:
@@ -220,7 +222,7 @@ def render():
 
     # ── SECTION: Comparison Summary ─────────────────────────────
     st.header("📊 Comparison Summary — ทุกกลุ่ม")
-    st.caption("ใช้เป็นฐานคำนวณขนาดอุปกรณ์จริงหน้างาน | UPS/Transformer/Generator/Busway ใช้ขนาดเดียวกันทุกกลุ่ม (เลือกจากค่ามากสุด)")
+    st.caption("ใช้เป็นฐานคำนวณขนาดอุปกรณ์จริงหน้างาน | แต่ละกลุ่มเลือก UPS/Transformer/Generator/Busway ของตัวเองอิสระกัน (group ใครกลุ่มมัน)")
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
 
 #เชื่อมระบบ

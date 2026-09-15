@@ -169,7 +169,7 @@ def select_gen_busbar(gen_kw: float, gen_pf: float, cfg: dict) -> dict:
     ในอนาคตอาจเพิ่ม tolerance แบบ "ใกล้พอให้เลือก size รองได้" (เช่น 4200A ยังเลือก 4000A ได้)
     — ยังไม่ implement ตรงนี้ รอคุยรายละเอียดก่อน
 
-    gen_kw : ขนาด Generator ที่เลือกได้แล้ว (common size ทุกกลุ่ม, kW)
+    gen_kw : ขนาด Generator ที่เลือกได้แล้วของกลุ่มนี้ (per-group, kW)
     gen_pf : Power Factor ของเครื่องกำเนิด — ใช้ค่าเดียวกับที่กรอกใน tab สรุป Attribute
              (Ground Cable Assumption) ไม่ hardcode แยกอีกต่อไป (sync กับ GEN_S_RATING ด้วย)
     cfg    : ใช้ voltage / busway_sizes ชุดเดียวกับจุดอื่นในระบบ (ไม่ใช้ design_margin แล้ว)
@@ -197,10 +197,10 @@ def select_rmu_attributes(trafo_kva: float, mv_voltage: float, rmu_sizes: list =
     - RMU_LEFT_CB / RMU_RIGHT_LB : incomer/tie เชื่อม ring กับ RMU ข้างเคียง — ใช้ค่าเท่ากับ
                     RMU_BUSBAR เป๊ะ (ต่างกันแค่ชื่ออุปกรณ์ทางกายภาพ: LB=Load Break ใช้เชื่อมเฉยๆ
                     ไม่มีฟังก์ชันป้องกัน, CB=Circuit Breaker มีฟังก์ชันป้องกันด้วย)
-    - ทุกกลุ่มใช้ trafo ขนาดเดียวกันอยู่แล้ว (unify_common_sizes) -> RMU ทั้ง 4 ตัวเลยได้ขนาดเดียวกันหมด
+    - แต่ละกลุ่มคำนวณ trafo ของตัวเองอิสระกัน (ไม่ unify แล้ว) -> RMU ของแต่ละกลุ่มอาจได้ขนาดไม่เท่ากันได้
     - Standard size มีแค่ 2 ตัวเลือกเท่านั้น: 200A / 630A (ยืนยันโดยผู้ใช้ — คนละ list กับ busway LV)
 
-    trafo_kva  : ขนาด Transformer ที่เลือกได้แล้ว (common size ทุกกลุ่ม, kVA)
+    trafo_kva  : ขนาด Transformer ที่เลือกได้แล้วของกลุ่มนี้ (per-group, kVA)
     mv_voltage : แรงดันฝั่ง MV ของ RMU (V) เช่น 22000 / 24000 / 33000 — คนละตัวกับ voltage LV (415V)
     rmu_sizes  : standard size list ของ RMU CB/Busbar — default [200, 630]
     """

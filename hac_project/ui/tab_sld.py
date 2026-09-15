@@ -4,9 +4,10 @@ TAB 4: SLD ATTRIBUTES — กรอก/แก้ไข Attribute แล้วส
 หมายเหตุสำหรับงานต่อไป: ถ้าต้องการดึงค่าที่คำนวณไว้จาก tab 3 (Equipment Sizing)
 มาใช้ในนี้ (เช่น auto-fill ขนาด Transformer/Generator/Busway ลงใน PTU_FIX
 attributes) ให้อ่านจาก:
-    st.session_state.sizing_cfg           -> assumption/config ล่าสุด
+    st.session_state.sizing_cfg           -> assumption/config ล่าสุด (ใช้ร่วมกันทุกกลุ่ม)
     st.session_state.sizing_group_calcs   -> list ของ {"gi", "chain", "equip"} ต่อกลุ่ม
-    st.session_state.sizing_common_sizes  -> {"ups":.., "gen":.., "trafo":.., "busway":.., "it_busbar":.., "before_ups_busbar":..}
+                                              (source of truth — แต่ละกลุ่มเลือกขนาดของตัวเองอิสระกัน
+                                              "group ใครกลุ่มมัน" ไม่ unify ข้ามกลุ่มแล้ว)
 ทั้งหมดนี้ถูก set ไว้แล้วตอน render ของ ui/tab_sizing.py (ต้องเปิด tab 3 ก่อนอย่างน้อย 1 ครั้ง
 ในเซสชันนั้น ค่าถึงจะมี — ควร guard ด้วย st.session_state.get(...) เสมอ)
 
@@ -41,21 +42,29 @@ def build_overrides(state: dict) -> dict:
         if val != default_dict.get(name, "")
     }
 #เชื่อมระบบ
-def compute_smart_ptu_fix_defaults() -> dict:
+def compute_smart_ptu_fix_defaults(gi: int) -> dict:
     """
-    สร้างค่า default อัจฉริยะจากผลคำนวณ Equipment Sizing (tab 3)
-    คืน dict ว่างถ้ายังไม่เคยเปิด tab 3 ในเซสชันนี้ → fallback เป็นค่า default เดิมทั้งหมด
+    สร้างค่า default อัจฉริยะจากผลคำนวณ Equipment Sizing (tab 3) ของกลุ่ม gi เดียว
+    (แต่ละกลุ่มเลือกขนาดของตัวเองอิสระกัน — "group ใครกลุ่มมัน" ไม่ unify ข้ามกลุ่มแล้ว)
+    คืน dict ว่างถ้ายังไม่เคยเปิด tab 3 ในเซสชันนี้ (หรือไม่มีกลุ่ม gi) → fallback เป็นค่า default เดิมทั้งหมด
+
+    gi : เลข generator group (1-based) ที่กำลังเลือกอยู่
     """
-    sizes = st.session_state.get("sizing_common_sizes")
-    if not sizes or any(v is None for v in sizes.values()):
+    group_calcs = st.session_state.get("sizing_group_calcs")
+    if not group_calcs or gi < 1 or gi > len(group_calcs):
         return {}
 
-    ups_kw   = sizes["ups"]
-    trafo_kva = sizes["trafo"]
-    gen_kw   = sizes["gen"]
-    busway_a = sizes["busway"]
-    it_a     = sizes["it_busbar"]
-    preups_a = sizes["before_ups_busbar"]
+    equip = group_calcs[gi - 1]["equip"]
+    required_keys = ("ups", "gen", "trafo", "busway", "it_busbar", "before_ups_busbar")
+    if any(equip.get(k, {}).get("size") is None for k in required_keys):
+        return {}
+
+    ups_kw    = equip["ups"]["size"]
+    trafo_kva = equip["trafo"]["size"]
+    gen_kw    = equip["gen"]["size"]
+    busway_a  = equip["busway"]["size"]
+    it_a      = equip["it_busbar"]["size"]
+    preups_a  = equip["before_ups_busbar"]["size"]
 
     # gen_pf: ยึดตาม input ที่ผู้ใช้กรอกจริงใน tab "สรุปการคำนวณ Attribute" (หัวข้อ Ground Cable Assumption)
     # ไม่ hardcode แยกอีกต่อไป (เดิมเคยใช้ GEN_PF_ASSUMED = 0.8 คนละตัวกับ ground cable — ทำให้ไม่ sync กัน)
@@ -124,15 +133,17 @@ def compute_smart_ptu_fix_defaults() -> dict:
     }
 
 
-def apply_ground_cable_defaults(smart_defaults: dict) -> dict:
+def apply_ground_cable_defaults(smart_defaults: dict, gi: int) -> dict:
     """
-    เติมค่า ground cable เข้า smart_defaults จากผลคำนวณ 2 ฐานแยกกัน
-    (st.session_state.ground_result = {"trafo": {...}, "gen": {...}}):
+    เติมค่า ground cable เข้า smart_defaults จากผลคำนวณ 2 ฐานแยกกัน ของกลุ่ม gi เดียว
+    (st.session_state.ground_result = {gi: {"trafo": {...}, "gen": {...}}, ...} — per-group,
+    เก็บโดย ui/tab_attribute_summary.py):
     - ฐาน Transformer -> RMU_S_GROUNDCABLE, TX_S_GROUNDCABLE
     - ฐาน Generator   -> GEN_S_GROUNDCABLE, PTU_GROUNDCABLE
-    ไม่กระทบ logic เดิมถ้ายังไม่เคยเปิด tab สรุป Attribute Calculation (fallback เป็น default เดิม)
+    ไม่กระทบ logic เดิมถ้ายังไม่เคยเปิด tab สรุป Attribute Calculation ของกลุ่มนี้ (fallback เป็น default เดิม)
     """
-    ground = st.session_state.get("ground_result")
+    ground_all = st.session_state.get("ground_result") or {}
+    ground = ground_all.get(gi)
     if not ground:
         return smart_defaults
 
@@ -164,6 +175,7 @@ def render():
     grp_options = [f"Group {i}" for i in range(1, n_grp + 1)]
     selected_grp = st.selectbox("เลือก Generator Group", options=grp_options, key="sld_grp_select")
     grp_key = selected_grp.replace(" ", "_").lower()  # เช่น "group_1"
+    gi = grp_options.index(selected_grp) + 1
 
     # init session state สำหรับแต่ละกลุ่ม
     if "sld_attrs" not in st.session_state:
@@ -171,8 +183,8 @@ def render():
 
     if grp_key not in st.session_state.sld_attrs:
         # init ด้วย default values
-        smart_defaults = compute_smart_ptu_fix_defaults()
-        smart_defaults = apply_ground_cable_defaults(smart_defaults)
+        smart_defaults = compute_smart_ptu_fix_defaults(gi)
+        smart_defaults = apply_ground_cable_defaults(smart_defaults, gi)
         st.session_state.sld_attrs[grp_key] = {
             "ptu_fix":  [(name, smart_defaults.get(name, val)) for name, val in PTU_FIX_DEFAULTS],  # ← แก้บรรทัดนี้
             "mdbaux_count": 1,
