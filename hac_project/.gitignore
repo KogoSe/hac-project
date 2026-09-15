@@ -16,3 +16,6 @@ venv/
 *.dwl
 *.dwl2
 *.xlsx
+
+toy_solve_log.json
+toy_solver.py
