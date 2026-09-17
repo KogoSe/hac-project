@@ -137,7 +137,6 @@ def render():
     edited_df["_rack_list"]    = edited_df["Rack Layout (kW)"].apply(parse_rack_layout)
     edited_df["_rack_count"]   = edited_df["_rack_list"].apply(len)
     edited_df["_row_kw"]       = edited_df["_rack_list"].apply(sum)
-    edited_df["Total kW / HAC"] = edited_df["_row_kw"] * 2
 
     if len(edited_df) == 0:
         st.info("กรอกข้อมูล HAC ในแท็บก่อน")
@@ -151,7 +150,11 @@ def render():
     mode = st.session_state.get("optimization_mode", "contiguous")
 
     # ── ENGINE (MILP: grouping + pairing รวมเป็นโมเดลเดียว, minimize max-fail-load) ──
-    row_units = build_row_units(edited_df)
+    try:
+        row_units = build_row_units(edited_df)
+    except ValueError as e:
+        st.error(f"❌ ข้อมูล HAC ไม่ถูกต้อง: {e}")
+        st.stop()
     if mode == "free":
         warm_start_groups = st.session_state.get("last_contiguous_groups")
         milp_result = solve_pairing_milp_free(
@@ -191,13 +194,17 @@ def render():
 
     hac_list = [
         {
-            "name":        r["HAC Name"],
-            "count":       r["_rack_count"],
-            "load":        r["_row_kw"] / r["_rack_count"] if r["_rack_count"] > 0 else 0,
-            "rack_list":   r["_rack_list"],
-            "source_type": r.get("Source Type", "2-source"),
+            "name": name,
+            "rows": [
+                {
+                    "side":        r["Side"],
+                    "rack_list":   r["_rack_list"],
+                    "source_type": r.get("Source Type", "2-source"),
+                }
+                for _, r in grp.iterrows()
+            ],
         }
-        for _, r in edited_df.iterrows()
+        for name, grp in edited_df.groupby("HAC Name", sort=False)
     ]
     st.markdown(build_hac_svg(hac_list, groups), unsafe_allow_html=True)
 

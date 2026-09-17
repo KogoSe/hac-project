@@ -14,35 +14,45 @@ from ui.svg_diagram import build_hac_svg
 EXCEL_IMPORT_PATH = "Input_datahall.xlsx"  # วางไว้ที่ hac_project/ (ระดับเดียวกับ app.py)
 
 
-def load_hac_df_from_excel(sheet_name: str) -> pd.DataFrame:
+def load_hac_df_from_excel(sheet_name: str) -> tuple[pd.DataFrame, list[str]]:
     """
     อ่าน sheet ที่เลือกจาก Input_datahall.xlsx → DataFrame รูปแบบเดียวกับ hac_df
-    โครงสร้างไฟล์: แถว 1 = header, แถว 2 เป็นต้นไป = ข้อมูล
-    คอลัมน์ A = HAC Name, B = Source type, C เป็นต้นไป = Layout Racks (ความยาวไม่เท่ากันได้)
+    โครงสร้างไฟล์ใหม่: แถว 1 = header, แถว 2 เป็นต้นไป = ข้อมูล (1 Excel row = 1 df row จริง ไม่ derive/duplicate เพิ่ม)
+    คอลัมน์ A = HAC Name, B = Side (บน/ล่าง), C = Source Type, D เป็นต้นไป = Rack Layout values
+    Side ว่าง → default "บน" (คืนรายชื่อ HAC ที่ไม่ได้ระบุ Side กลับมาด้วย ให้ UI แสดง warning)
     """
     wb = openpyxl.load_workbook(EXCEL_IMPORT_PATH, data_only=True)
     ws = wb[sheet_name]
 
     rows_out = []
+    missing_side = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         name = row[0]
-        source = row[1]
+        source = row[2]
         if name is None or source is None:
             continue  # แถวว่าง ข้ามไป
-        rack_values = [v for v in row[2:] if v is not None]
+        side = row[1]
+        if side is None or str(side).strip() == "":
+            side = "บน"
+            missing_side.append(str(name))
+        rack_values = [v for v in row[3:] if v is not None]
         rack_str = ", ".join(str(int(v)) if float(v).is_integer() else str(v) for v in rack_values)
         rows_out.append({
             "HAC Name": str(name),
+            "Side": str(side),
             "Rack Layout (kW)": rack_str,
             "Source Type": str(source),
         })
 
-    return pd.DataFrame(rows_out)
+    return pd.DataFrame(rows_out), missing_side
 
 
 def render():
     st.header("กรอกข้อมูล HAC")
-    st.caption("แต่ละ HAC มี 2 แถว (บน/ล่าง) | Source Type: 2-source (default) หรือ 4-source สำหรับ Liquid rack ≥100 kW")
+    st.caption("แต่ละ HAC มีได้ 1-2 แถว (บน/ล่าง) — กรอกทีละแถวจริง ไม่มี mirror อัตโนมัติ | Source Type: 2-source (default) หรือ 4-source สำหรับ Liquid rack ≥100 kW")
+
+    if st.session_state.get("excel_import_warning"):
+        st.warning(st.session_state.excel_import_warning)
 
  # ── SECTION: Import จาก Excel ────────────────────────────
     with st.expander("📥 Import ข้อมูลจาก Excel", expanded=False):
@@ -55,11 +65,17 @@ def render():
                 with col2:
                     st.write(""); st.write("")
                     if st.button("📥 โหลดข้อมูล", use_container_width=True, type="primary"):
-                        new_df = load_hac_df_from_excel(selected_sheet)
+                        new_df, missing_side = load_hac_df_from_excel(selected_sheet)
                         if len(new_df) == 0:
                             st.warning(f"⚠️ ไม่พบข้อมูลใน sheet '{selected_sheet}'")
                         else:
                             st.session_state.hac_df = new_df   # ทับตารางเดิมทั้งหมด
+                            if missing_side:
+                                st.session_state.excel_import_warning = (
+                                    f"⚠️ พบแถวที่ไม่ได้ระบุ Side (ใช้ค่า default 'บน'): {', '.join(missing_side)}"
+                                )
+                            else:
+                                st.session_state.excel_import_warning = None
                             st.success(f"✅ โหลด {len(new_df)} แถวจาก sheet '{selected_sheet}' แล้ว")
                             st.rerun()
             except Exception as e:
@@ -69,14 +85,19 @@ def render():
 
     st.divider()
 
-    # default data — Rack Layout แบบ string
+    # default data — 1 sheet row = 1 แถวจริง (long format) ค่าบน/ล่างเท่าเดิมเพื่อหน้าตา default ไม่เปลี่ยน
     if "hac_df" not in st.session_state:
         st.session_state.hac_df = pd.DataFrame([
-            {"HAC Name": "HAC 1", "Rack Layout (kW)": "20, 20, 20, 20, 20, 20, 20, 20, 20, 20", "Source Type": "2-source"},
-            {"HAC Name": "HAC 2", "Rack Layout (kW)": "20, 20, 20, 20, 20, 20, 20, 20, 20, 20", "Source Type": "2-source"},
-            {"HAC Name": "HAC 3", "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
-            {"HAC Name": "HAC 4", "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
-            {"HAC Name": "HAC 5", "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 1", "Side": "บน",   "Rack Layout (kW)": "20, 20, 20, 20, 20, 20, 20, 20, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 1", "Side": "ล่าง", "Rack Layout (kW)": "20, 20, 20, 20, 20, 20, 20, 20, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 2", "Side": "บน",   "Rack Layout (kW)": "20, 20, 20, 20, 20, 20, 20, 20, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 2", "Side": "ล่าง", "Rack Layout (kW)": "20, 20, 20, 20, 20, 20, 20, 20, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 3", "Side": "บน",   "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 3", "Side": "ล่าง", "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 4", "Side": "บน",   "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 4", "Side": "ล่าง", "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 5", "Side": "บน",   "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
+            {"HAC Name": "HAC 5", "Side": "ล่าง", "Rack Layout (kW)": "20, 150, 150, 150, 150, 150, 150, 150, 20, 20", "Source Type": "2-source"},
         ])
 
     # migrate df เก่าที่ยังใช้ Rack Count + Load per Rack
@@ -94,12 +115,35 @@ def render():
     if "Source Type" not in st.session_state.hac_df.columns:
         st.session_state.hac_df["Source Type"] = "2-source"
 
+    # migrate session state เก่าที่ยังไม่มีคอลัมน์ Side: duplicate แต่ละแถวเดิมเป็นบน+ล่าง 1 ครั้ง (ทำครั้งเดียว)
+    if "Side" not in st.session_state.hac_df.columns:
+        old = st.session_state.hac_df
+        new_rows = []
+        for _, r in old.iterrows():
+            for side in ("บน", "ล่าง"):
+                new_rows.append({
+                    "HAC Name":         r["HAC Name"],
+                    "Side":             side,
+                    "Rack Layout (kW)": r["Rack Layout (kW)"],
+                    "Source Type":      r.get("Source Type", "2-source"),
+                })
+        st.session_state.hac_df = pd.DataFrame(new_rows)
+
+    # เรียงคอลัมน์ให้ตรง data model ใหม่
+    st.session_state.hac_df = st.session_state.hac_df[["HAC Name", "Side", "Rack Layout (kW)", "Source Type"]]
+
     edited_df = st.data_editor(
         st.session_state.hac_df,
         num_rows="dynamic",
         use_container_width=True,
         column_config={
             "HAC Name": st.column_config.TextColumn("HAC Name", required=True),
+            "Side": st.column_config.SelectboxColumn(
+                "Side",
+                options=["บน", "ล่าง"],
+                required=True,
+                help="HAC เดียวกันต้องอยู่แถวติดกัน มีได้สูงสุด 2 แถว และ Side ห้ามซ้ำกัน",
+            ),
             "Rack Layout (kW)": st.column_config.TextColumn(
                 "Rack Layout (kW)",
                 required=True,
@@ -116,22 +160,25 @@ def render():
     )
     st.session_state.hac_df = edited_df
 
-    # Duplicate button
+    # Duplicate button — duplicate ต่อแถว, dropdown เลือกจาก "HAC Name - Side"
     if len(edited_df) > 0:
+        dup_options = [f"{r['HAC Name']} - {r['Side']}" for _, r in edited_df.iterrows()]
         col1, col2 = st.columns([3, 1])
         with col1:
-            dup_choice = st.selectbox("Duplicate HAC", options=edited_df["HAC Name"].tolist(), key="dup_select")
+            dup_choice = st.selectbox("Duplicate HAC", options=dup_options, key="dup_select")
         with col2:
             st.write(""); st.write("")
             if st.button("➕ Duplicate", use_container_width=True):
-                row     = edited_df[edited_df["HAC Name"] == dup_choice].iloc[0].copy()
-                base    = row["HAC Name"]
+                dup_idx = dup_options.index(dup_choice)
+                row      = edited_df.iloc[dup_idx].copy()
+                base     = row["HAC Name"]
                 existing = set(edited_df["HAC Name"].tolist())
                 new_name = base + " copy"
                 c = 2
                 while new_name in existing:
                     new_name = f"{base} copy{c}"; c += 1
                 row["HAC Name"] = new_name
+                row["Side"] = "บน"
                 st.session_state.hac_df = pd.concat(
                     [st.session_state.hac_df, pd.DataFrame([row])], ignore_index=True
                 )
@@ -139,24 +186,24 @@ def render():
 
     # Summary metrics — parse rack layout
     edited_df = edited_df.dropna(subset=["HAC Name"]).copy()
-    edited_df["_rack_list"] = edited_df["Rack Layout (kW)"].apply(parse_rack_layout)
+    edited_df["_rack_list"]  = edited_df["Rack Layout (kW)"].apply(parse_rack_layout)
     edited_df["_rack_count"] = edited_df["_rack_list"].apply(len)
-    edited_df["_row_kw"]    = edited_df["_rack_list"].apply(sum)
-    edited_df["Total kW / HAC"] = edited_df["_row_kw"] * 2
+    edited_df["_row_kw"]     = edited_df["_rack_list"].apply(sum)
 
     # validate — แสดง error ถ้า parse ไม่ได้
     invalid = edited_df[edited_df["_rack_count"] == 0]["HAC Name"].tolist()
     if invalid:
         st.warning(f"⚠️ กรอก Rack Layout ไม่ถูกต้องใน: {', '.join(invalid)} — ตัวอย่าง: 20, 150, 150, 20")
 
-    total_all   = edited_df["Total kW / HAC"].sum()
-    cnt_2src    = (edited_df["Source Type"] == "2-source").sum()
-    cnt_4src    = (edited_df["Source Type"] == "4-source").sum()
+    total_all = edited_df.groupby("HAC Name")["_row_kw"].sum().sum()
+    hac_first = edited_df.drop_duplicates(subset="HAC Name", keep="first")
+    cnt_2src  = (hac_first["Source Type"] == "2-source").sum()
+    cnt_4src  = (hac_first["Source Type"] == "4-source").sum()
 
     st.divider()
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("จำนวน HAC",          len(edited_df))
-    c2.metric("จำนวนแถวทั้งหมด",    len(edited_df) * 2)
+    c1.metric("จำนวน HAC",          edited_df["HAC Name"].nunique())
+    c2.metric("จำนวนแถวทั้งหมด",    len(edited_df))
     c3.metric("Total IT Load (kW)", f"{total_all:,.0f}")
     c4.metric("HAC แบบ 2-source",   cnt_2src)
     c5.metric("HAC แบบ 4-source",   cnt_4src)
@@ -179,13 +226,17 @@ def render():
     if len(edited_df) > 0:
         hac_list = [
             {
-                "name":        r["HAC Name"],
-                "count":       r["_rack_count"],
-                "load":        r["_row_kw"] / r["_rack_count"] if r["_rack_count"] > 0 else 0,
-                "rack_list":   r["_rack_list"],
-                "source_type": r.get("Source Type", "2-source"),
+                "name": name,
+                "rows": [
+                    {
+                        "side":        r["Side"],
+                        "rack_list":   r["_rack_list"],
+                        "source_type": r.get("Source Type", "2-source"),
+                    }
+                    for _, r in grp.iterrows()
+                ],
             }
-            for _, r in edited_df.iterrows()
+            for name, grp in edited_df.groupby("HAC Name", sort=False)
         ]
         st.markdown(build_hac_svg(hac_list), unsafe_allow_html=True)
         st.caption("ขอบสีม่วง = 4-source | ตัวเลขในแต่ละตู้คือ kW จริง | สีพื้นหลังแถวจะแสดงหลังคำนวณ")

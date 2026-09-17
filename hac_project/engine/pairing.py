@@ -22,17 +22,36 @@ def parse_rack_layout(layout_str: str) -> list[float]:
 
 def build_row_units(df: pd.DataFrame) -> list[dict]:
     """
-    แปลง HAC DataFrame → list of row units (top + bottom per HAC)
+    แปลง HAC DataFrame → list of row units อ่านจากแถวจริง 1 ต่อ 1 (ไม่ duplicate/mirror)
     แต่ละ row มี: hac, side, kw, rack_list, source_type
     kw = sum ของ rack_list (โหลดรวมต่อแถว)
+
+    Validation: HAC Name เดียวกันต้องอยู่เป็นแถวติดกัน (consecutive), มีได้ 1-2 แถว, Side ห้ามซ้ำ
+    ผิดเงื่อนไข → raise ValueError พร้อมข้อความชัดเจน (ห้าม silent fail)
     """
     rows = []
-    for _, r in df.iterrows():
-        rack_list = parse_rack_layout(r.get("Rack Layout (kW)", ""))
-        kw        = float(sum(rack_list)) if rack_list else 0.0
-        src       = r.get("Source Type", "2-source")
-        rows.append({"hac": r["HAC Name"], "side": "บน",   "kw": kw, "rack_list": rack_list, "source_type": src})
-        rows.append({"hac": r["HAC Name"], "side": "ล่าง", "kw": kw, "rack_list": rack_list, "source_type": src})
+    seen_hac_names = set()
+    for hac, group in itertools.groupby(df.to_dict("records"), key=lambda r: r["HAC Name"]):
+        group = list(group)
+        if hac in seen_hac_names:
+            raise ValueError(f"HAC '{hac}': ชื่อซ้ำแบบไม่ติดกัน — แถวของ HAC เดียวกันต้องอยู่ติดกัน (consecutive) เท่านั้น")
+        seen_hac_names.add(hac)
+
+        if len(group) > 2:
+            raise ValueError(f"HAC '{hac}': มี {len(group)} แถว — HAC หนึ่งมีได้สูงสุด 2 แถว (บน/ล่าง)")
+
+        sides = [r.get("Side", "บน") for r in group]
+        for s in sides:
+            if s not in ("บน", "ล่าง"):
+                raise ValueError(f"HAC '{hac}': Side ต้องเป็น 'บน' หรือ 'ล่าง' เท่านั้น (พบ: '{s}')")
+        if len(sides) == 2 and sides[0] == sides[1]:
+            raise ValueError(f"HAC '{hac}': Side ซ้ำกัน ('{sides[0]}' ทั้ง 2 แถว) — ต้องมีบน 1 แถว และล่าง 1 แถว ไม่ซ้ำกัน")
+
+        for r in group:
+            rack_list = parse_rack_layout(r.get("Rack Layout (kW)", ""))
+            kw        = float(sum(rack_list)) if rack_list else 0.0
+            src       = r.get("Source Type", "2-source")
+            rows.append({"hac": hac, "side": r.get("Side", "บน"), "kw": kw, "rack_list": rack_list, "source_type": src})
     return rows
 
 

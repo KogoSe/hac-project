@@ -7,7 +7,8 @@ from constants import GROUP_SVG_COLORS
 def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
     """
     วาด SVG แสดง HAC layout พร้อมระบายสีกลุ่ม
-    hac_list: list of {name, count, load, source_type}
+    hac_list: list of {"name": str, "rows": [{"side": "บน"/"ล่าง", "rack_list": [...], "source_type": str}, ...]}
+    แต่ละ HAC มีได้ 1 หรือ 2 แถว (rows) — ไม่ fix 2 แถวตายตัว, HAC แถวเดียวไม่เว้นช่องว่างแทนแถวที่ไม่มี
     ถ้ามี groups: แสดง pairing label (เช่น "AB", "ABCD") ทางซ้ายของแต่ละแถวด้วย
     """
     FIXED_WIDTH    = 1000
@@ -33,7 +34,13 @@ def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
 
     left_offset  = SIDE_MARGIN + (LABEL_MARGIN if groups else 0)
     inner_width  = FIXED_WIDTH - left_offset - SIDE_MARGIN
-    total_height = len(hac_list) * (BOX_HEIGHT + 2 * CONN_HEIGHT) + (len(hac_list) - 1) * ROW_GAP + 40
+
+    # total_height คำนวณจากจำนวนแถวจริงต่อ HAC (1 หรือ 2 แถว) ไม่ fix ตายตัว
+    total_height = 40
+    for hac in hac_list:
+        total_height += len(hac["rows"]) * CONN_HEIGHT + BOX_HEIGHT
+    if len(hac_list) > 1:
+        total_height += (len(hac_list) - 1) * ROW_GAP
 
     parts = [
         f'<svg viewBox="0 0 {FIXED_WIDTH} {total_height}" width="100%" height="auto" '
@@ -43,29 +50,28 @@ def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
 
     y = 20
     for hac in hac_list:
-        count      = int(hac["count"])
-        load       = hac["load"]
-        name       = hac["name"]
-        is_4src    = hac.get("source_type", "2-source") == "4-source"
-        cell_w     = inner_width / count
-        conn_w     = cell_w * (1 - CONN_PAD_RATIO)
-        conn_pad   = cell_w * CONN_PAD_RATIO / 2
-        top_color  = row_color_map.get((name, "บน"),   "white")
-        bot_color  = row_color_map.get((name, "ล่าง"), "white")
+        name    = hac["name"]
+        rows    = hac["rows"]
+        is_4src = any(r.get("source_type", "2-source") == "4-source" for r in rows)
         # 4-source ขอบเส้นหนาสีม่วง, 2-source ปกติ
         stroke_col = "#7C3AED" if is_4src else "#555"
         stroke_w   = "2.5"    if is_4src else "1.5"
 
+        top_entry = next((r for r in rows if r["side"] == "บน"), None)
+        bot_entry = next((r for r in rows if r["side"] == "ล่าง"), None)
+
         top_y = y
-        box_y = top_y + CONN_HEIGHT
+        box_y = top_y + (CONN_HEIGHT if top_entry else 0)
         bot_y = box_y + BOX_HEIGHT
 
-        # rack_loads: ใช้ rack_list ถ้ามี ไม่งั้น fallback เป็น load เดิม
-        rack_loads = hac.get("rack_list", [load] * count)
-        if len(rack_loads) != count:
-            rack_loads = [load] * count
+        for row_entry, side_y in [(top_entry, top_y), (bot_entry, bot_y)]:
+            if row_entry is None:
+                continue  # ไม่มีแถวนี้ (HAC ที่มีแถวเดียว) — ไม่วาด ไม่เว้นช่องว่าง
+            side_name = row_entry["side"]
+            rack_list = row_entry.get("rack_list", [])
+            count     = len(rack_list)
+            fill      = row_color_map.get((name, side_name), "white")
 
-        for side_y, fill, side_name in [(top_y, top_color, "บน"), (bot_y, bot_color, "ล่าง")]:
             if groups:
                 pair_label = row_pair_map.get((name, side_name), "")
                 if pair_label:
@@ -73,9 +79,16 @@ def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
                         f'<text x="{SIDE_MARGIN + LABEL_MARGIN - 8:.1f}" y="{side_y + CONN_HEIGHT/2 + 4:.1f}" '
                         f'font-size="{PAIR_FONT}" text-anchor="end" font-weight="700" fill="#444">{pair_label}</text>'
                     )
+
+            if count == 0:
+                continue  # rack layout ว่าง/parse ไม่ได้ (มี warning แยกอยู่แล้วในหน้า input)
+
+            cell_w   = inner_width / count
+            conn_w   = cell_w * (1 - CONN_PAD_RATIO)
+            conn_pad = cell_w * CONN_PAD_RATIO / 2
             for i in range(count):
                 cx = left_offset + i * cell_w + conn_pad
-                label = f"{rack_loads[i]:g}" if i < len(rack_loads) else f"{load:g}"
+                label = f"{rack_list[i]:g}"
                 parts.append(
                     f'<rect x="{cx:.1f}" y="{side_y}" width="{conn_w:.1f}" height="{CONN_HEIGHT}" '
                     f'fill="{fill}" stroke="{stroke_col}" stroke-width="{stroke_w}" rx="2"/>'
@@ -96,7 +109,7 @@ def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
             f'font-size="{LABEL_FONT}" font-weight="bold" text-anchor="middle" fill="#1a1a1a">'
             f'{name}{src_label}</text>'
         )
-        y = bot_y + CONN_HEIGHT + ROW_GAP
+        y = box_y + BOX_HEIGHT + (CONN_HEIGHT if bot_entry else 0) + ROW_GAP
 
     parts.append("</svg>")
     return "".join(parts)
