@@ -211,7 +211,7 @@ def render():
     # Settings
     st.divider()
     st.subheader("⚙️ ตั้งค่า Optimization")
-    n_groups = st.number_input("จำนวนกลุ่ม Generator (default = 3)", min_value=2, max_value=6, value=3, step=1)
+    n_groups = st.number_input("จำนวนกลุ่ม กลุ่มนึงมี4PTU(A,B,C,D) (default = 3)", min_value=1, max_value=6, value=3, step=1)
     st.session_state.n_groups = int(n_groups)
     time_limit = st.number_input(
         "Time Limit ต่อการ solve (วินาที)",
