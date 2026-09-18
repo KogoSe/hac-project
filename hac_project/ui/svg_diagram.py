@@ -1,6 +1,8 @@
 """
 SVG DIAGRAM BUILDER — วาด HAC layout พร้อมระบายสีกลุ่ม
 """
+import math
+
 from constants import GROUP_SVG_COLORS
 
 
@@ -88,7 +90,7 @@ def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
             conn_pad = cell_w * CONN_PAD_RATIO / 2
             for i in range(count):
                 cx = left_offset + i * cell_w + conn_pad
-                label = f"{rack_list[i]:g}"
+                label = f"{math.ceil(rack_list[i])}"  # แสดงปัดขึ้นเป็นจำนวนเต็มเพื่อความสวยงาม — คำนวณจริงยังใช้ค่าทศนิยมเดิม
                 parts.append(
                     f'<rect x="{cx:.1f}" y="{side_y}" width="{conn_w:.1f}" height="{CONN_HEIGHT}" '
                     f'fill="{fill}" stroke="{stroke_col}" stroke-width="{stroke_w}" rx="2"/>'
