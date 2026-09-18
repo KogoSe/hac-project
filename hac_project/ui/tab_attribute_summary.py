@@ -58,12 +58,36 @@ def render():
 
     sizes = group_calcs[gi - 1]["equip"]
     required_keys = ("trafo", "gen", "busway", "it_busbar", "before_ups_busbar")
-    if any(sizes.get(k, {}).get("size") is None for k in required_keys):
-        st.info(f"⚠️ {selected_grp} ไม่มี size รองรับ — ตรวจสอบ Standard Size List ที่แท็บ Equipment Sizing")
-        st.stop()
+    missing_keys = [k for k in required_keys if sizes.get(k, {}).get("size") is None]
+    if missing_keys:
+        # ไม่ st.stop() แล้ว — คำนวณต่อโดยใช้ load จริง (ก่อนเลือก standard size) แทน เพื่อให้เห็น
+        # ตัวเลขว่าต้องการเท่าไหร่/เกินมาตรฐานสูงสุดในลิสต์เท่าไหร่ (เหมือน tab Equipment Sizing / Tap-off / SVG)
+        sizing_cfg    = st.session_state.get("sizing_cfg", {})
+        size_list_key = {
+            "trafo": "trafo_sizes", "gen": "gen_sizes", "busway": "busway_sizes",
+            "it_busbar": "busway_sizes", "before_ups_busbar": "busway_sizes",
+        }
+        lines = []
+        for k in missing_keys:
+            load = sizes[k]["load"]
+            unit = sizes[k]["unit"]
+            size_list = sizing_cfg.get(size_list_key.get(k, ""), [])
+            max_size = max(size_list) if size_list else None
+            if max_size is not None:
+                lines.append(
+                    f"- **{k}**: ต้องการ {load:,.1f} {unit} แต่ขนาดมาตรฐานสูงสุดในลิสต์คือ "
+                    f"{max_size:,.0f} {unit} (เกิน {load - max_size:,.1f} {unit})"
+                )
+            else:
+                lines.append(f"- **{k}**: ต้องการ {load:,.1f} {unit} — ไม่มี Standard Size List ให้เทียบ")
+        st.warning(
+            f"⚠️ {selected_grp} มีอุปกรณ์ที่ไม่มีขนาดมาตรฐานรองรับพอ (แก้ Standard Size List ได้ที่แท็บ "
+            "Equipment Sizing) — หน้านี้ยังคำนวณต่อด้วยค่าที่ต้องการจริงด้านล่าง แต่ Attribute ใน Section 2 "
+            "ที่ต้องอิงขนาดมาตรฐานที่เลือกไม่ได้ จะแสดงเป็นค่า Default แทน:\n\n" + "\n".join(lines)
+        )
 
-    trafo_kva = sizes["trafo"]["size"]
-    gen_kw    = sizes["gen"]["size"]
+    trafo_kva = sizes["trafo"]["size"] if sizes["trafo"]["size"] is not None else sizes["trafo"]["load"]
+    gen_kw    = sizes["gen"]["size"] if sizes["gen"]["size"] is not None else sizes["gen"]["load"]
 
 
         # ═══════════════════════════════════════════════════════════
