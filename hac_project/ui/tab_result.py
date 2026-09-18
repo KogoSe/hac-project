@@ -156,15 +156,31 @@ def render():
     except ValueError as e:
         st.error(f"❌ ข้อมูล HAC ไม่ถูกต้อง: {e}")
         st.stop()
-    if mode == "free":
-        warm_start_groups = st.session_state.get("last_contiguous_groups")
-        milp_result = solve_pairing_milp_free(
-            row_units, n_groups, time_limit=time_limit, warm_start_groups=warm_start_groups
-        )
+
+    # ── Cache ผล solve ด้วย input จริง — Streamlit rerun สคริปต์ทั้งหน้าทุกครั้งที่มี
+    # interaction ที่ไหนก็ได้ในแอป (ทุกแท็บ render() ถูกเรียกใหม่หมดเสมอ ไม่ใช่แค่แท็บที่เปิดอยู่)
+    # ถ้าไม่ cache ตรงนี้ การกดปุ่มใน tab อื่น (เช่น Generate Proof, แก้ค่าใน Equipment Sizing)
+    # จะทำให้ solve MILP ใหม่ทั้งหมดทุกครั้งโดยไม่จำเป็น ทั้งที่ข้อมูล/การตั้งค่าไม่ได้เปลี่ยนเลย
+    rows_key = tuple((r["hac"], r["side"], r["kw"], r["source_type"]) for r in row_units)
+    warm_start_groups = st.session_state.get("last_contiguous_groups") if mode == "free" else None
+    warm_key = (
+        tuple(tuple((r["hac"], r["side"]) for r in grp) for grp in warm_start_groups)
+        if warm_start_groups else None
+    )
+    solve_key = (rows_key, n_groups, mode, time_limit, warm_key)
+
+    if st.session_state.get("milp_cache_key") == solve_key and st.session_state.get("milp_result") is not None:
+        milp_result = st.session_state.milp_result
     else:
-        milp_result = solve_pairing_milp(row_units, n_groups, time_limit=time_limit)
-        st.session_state.last_contiguous_groups = milp_result["groups"]
-    st.session_state.milp_result = milp_result  # ให้ tab_proof.py ใช้ต่อ (ไม่ solve ซ้ำ)
+        if mode == "free":
+            milp_result = solve_pairing_milp_free(
+                row_units, n_groups, time_limit=time_limit, warm_start_groups=warm_start_groups
+            )
+        else:
+            milp_result = solve_pairing_milp(row_units, n_groups, time_limit=time_limit)
+            st.session_state.last_contiguous_groups = milp_result["groups"]
+        st.session_state.milp_result = milp_result  # ให้ tab_proof.py ใช้ต่อ (ไม่ solve ซ้ำ)
+        st.session_state.milp_cache_key = solve_key
     groups = milp_result["groups"]
 
     if mode == "free":

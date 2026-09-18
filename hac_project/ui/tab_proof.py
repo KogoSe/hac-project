@@ -19,7 +19,19 @@ from engine.report_docx import build_optimization_proof_docx
 
 def render():
     milp_result = st.session_state.get("milp_result") if st.session_state.get("run_optimization", False) else None
-    proof_context = build_proof_context(milp_result) if milp_result is not None else None
+
+    # ── Cache proof_context ด้วย identity ของ milp_result — build_proof_context() วน
+    # brute-force cross-check (6^k ต่อกลุ่ม) ซึ่งไม่ถูกๆ ถ้าไม่ cache จะคำนวณซ้ำทุกครั้งที่มี
+    # interaction ที่ไหนก็ได้ในแอป (ทุกแท็บ render() ถูกเรียกใหม่ทุก rerun) ทั้งที่ milp_result
+    # เดิม (tab_result.py cache ผล solve ไว้แล้ว) ไม่ได้เปลี่ยนเลย
+    if milp_result is None:
+        proof_context = None
+    elif st.session_state.get("proof_context_cache_key") is milp_result and st.session_state.get("proof_context") is not None:
+        proof_context = st.session_state.proof_context
+    else:
+        proof_context = build_proof_context(milp_result)
+        st.session_state.proof_context = proof_context
+        st.session_state.proof_context_cache_key = milp_result
     current_mode = milp_result.get("mode") if milp_result is not None else None
 
     col_doc1, col_doc2 = st.columns(2)
