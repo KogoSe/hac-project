@@ -15,6 +15,17 @@ GROUP_BADGE_COLORS = ["#DBEAFE", "#DCFCE7", "#FEF9C3", "#FCE7F3", "#F3E8FF"]
 GROUP_SVG_COLORS   = ["#DBEAFE", "#DCFCE7", "#FEF9C3", "#FCE7F3", "#F3E8FF"]
 
 
+def ups_display_label(gi: int, u: str) -> str:
+    """
+    ชื่อ UPS ที่ใช้แสดงผลจริง (ไล่ตัวอักษรต่อเนื่องข้ามกลุ่ม) — เช่น กลุ่ม 1 = A,B,C,D,
+    กลุ่ม 2 = E,F,G,H, กลุ่ม 3 = I,J,K,L, ... ภายใน engine ยังใช้ A/B/C/D เดิมของ UPS_UNITS
+    เป็น key คำนวณเหมือนเดิมทุกกลุ่ม ฟังก์ชันนี้แปลงเฉพาะตอนแสดงผลให้ผู้ใช้เห็นเท่านั้น
+    """
+    import string
+    idx = (gi - 1) * len(UPS_UNITS) + UPS_UNITS.index(u)
+    return string.ascii_uppercase[idx]
+
+
 # ── SLD DEFAULT VALUES (tab 4) ────────────────────────────────
 # PTU_FIX: 33 attributes พร้อม default value ตามรูป
 PTU_FIX_DEFAULTS = [

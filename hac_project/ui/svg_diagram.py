@@ -3,7 +3,7 @@ SVG DIAGRAM BUILDER — วาด HAC layout พร้อมระบายส�
 """
 import math
 
-from constants import GROUP_SVG_COLORS
+from constants import GROUP_SVG_COLORS, UPS_UNITS, ups_display_label
 
 
 def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
@@ -30,9 +30,11 @@ def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
     if groups:
         for gi, grp in enumerate(groups):
             color = GROUP_SVG_COLORS[gi % len(GROUP_SVG_COLORS)]
+            group_labels = {u: ups_display_label(gi + 1, u) for u in UPS_UNITS}
             for row in grp:
                 row_color_map[(row["hac"], row["side"])] = color
-                row_pair_map[(row["hac"], row["side"])] = row.get("pair", "")
+                pair = row.get("pair", "")
+                row_pair_map[(row["hac"], row["side"])] = "".join(group_labels.get(ch, ch) for ch in pair)
 
     left_offset  = SIDE_MARGIN + (LABEL_MARGIN if groups else 0)
     inner_width  = FIXED_WIDTH - left_offset - SIDE_MARGIN
