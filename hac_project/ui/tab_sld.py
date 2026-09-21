@@ -92,7 +92,9 @@ def compute_smart_ptu_fix_defaults(gi: int) -> dict:
     rmu_cfg    = st.session_state.get("rmu_cfg", {})
     mv_voltage = rmu_cfg.get("mv_voltage", 22000)
     rmu_sizes  = rmu_cfg.get("rmu_sizes", [200, 630])
-    n_ups_per_group = st.session_state.get("n_ups_per_group", 4)
+    # ใช้ n_ups_per_group จาก milp_result ที่ group_calcs อ้างอิงอยู่จริง (เหตุผลเดียวกับ
+    # tab_attribute_summary.py — กัน sync ผิดถ้าผู้ใช้เปลี่ยนค่าแล้วยังไม่กดคำนวณใหม่)
+    n_ups_per_group = st.session_state.get("milp_result", {}).get("n_ups_per_group", 4)
     rmu = select_rmu_attributes(trafo_kva, mv_voltage, rmu_sizes, n_ups_per_group=n_ups_per_group)
     rmu_cb_str     = f"{rmu['rmu_cb']:.0f}"     if rmu["rmu_cb"]     else "N/A"
     rmu_busbar_str = f"{rmu['rmu_busbar']:.0f}" if rmu["rmu_busbar"] else "N/A"

@@ -18,7 +18,10 @@ def build_hac_svg(hac_list: list[dict], groups: list[list] = None, n_ups_per_gro
     CONN_HEIGHT    = 50
     ROW_GAP        = 50
     SIDE_MARGIN    = 20
-    LABEL_MARGIN   = 45   # พื้นที่สำหรับ pairing label ทางซ้าย (เผื่อ "ABCD") — ใช้เฉพาะตอนมี groups
+    # พื้นที่สำหรับ pairing label ทางซ้าย — ใช้เฉพาะตอนมี groups ปกติพอสำหรับ "ABCD" (4 ตัวอักษรเดี่ยว)
+    # แต่ตอนกลุ่ม/UPS เยอะมาก (n_groups=6 x n_ups_per_group=6 = 36 > 26 ตัวอักษร) ป้ายจะเริ่มยาวเป็น
+    # AA,AB,... ทำให้ quad label ยาวได้ถึง 8 ตัวอักษร (เช่น "AAABACAD") เผื่อพื้นที่ไว้กว้างขึ้นกันตัด
+    LABEL_MARGIN   = 75
     LABEL_FONT     = 18
     CONN_FONT      = 12
     PAIR_FONT      = 12

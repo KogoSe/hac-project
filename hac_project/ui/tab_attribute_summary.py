@@ -109,7 +109,10 @@ def render():
     mv_voltage = mv_voltage_kv * 1000
     st.session_state.rmu_cfg = {"mv_voltage": mv_voltage, "rmu_sizes": [200, 630]}
 
-    n_ups_per_group = st.session_state.get("n_ups_per_group", 4)
+    # ใช้ n_ups_per_group จาก milp_result ที่ group_calcs อ้างอิงอยู่จริง (ไม่ใช้ session_state ตรงๆ
+    # เพราะถ้าผู้ใช้เปลี่ยนค่าที่ tab กรอกข้อมูลแต่ยังไม่กลับไปกดคำนวณใหม่ milp_result/group_calcs
+    # ที่หน้านี้แสดงอยู่จะยัง "ค้าง" เป็นค่าเก่า ต้องใช้ n_ups_per_group ของค่าเก่าคู่กันเสมอไม่งั้นไม่ sync)
+    n_ups_per_group = st.session_state.get("milp_result", {}).get("n_ups_per_group", 4)
     from engine.sizing import select_rmu_attributes
     rmu_result = select_rmu_attributes(trafo_kva, mv_voltage, [200, 630], n_ups_per_group=n_ups_per_group)
 

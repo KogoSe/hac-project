@@ -25,6 +25,17 @@ GROUP_BADGE_COLORS = ["#DBEAFE", "#DCFCE7", "#FEF9C3", "#FCE7F3", "#F3E8FF"]
 GROUP_SVG_COLORS   = ["#DBEAFE", "#DCFCE7", "#FEF9C3", "#FCE7F3", "#F3E8FF"]
 
 
+def _index_to_letters(idx: int) -> str:
+    """0-indexed -> A, B, ..., Z, AA, AB, ... (base-26 แบบชื่อคอลัมน์ Excel — ไม่มีวันหมด ไม่ wrap
+    กลับไปชนกับตัวอักษรที่ใช้ไปแล้ว ต่างจาก string.ascii_uppercase[idx % 26] ตรงๆ ที่ wrap ซ้ำหลัง Z)"""
+    n = idx + 1  # 1-indexed สำหรับ bijective base-26
+    letters = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
+
+
 def ups_display_label(gi: int, u: str, n_ups_per_group: int = 4) -> str:
     """
     ชื่อ UPS ที่ใช้แสดงผลจริง (ไล่ตัวอักษรต่อเนื่องข้ามกลุ่ม) — เช่น n_ups_per_group=4: กลุ่ม 1 = A,B,C,D,
@@ -32,11 +43,14 @@ def ups_display_label(gi: int, u: str, n_ups_per_group: int = 4) -> str:
     ภายใน engine ยังใช้ A,B,C,... (จาก get_group_ups_units) เป็น key คำนวณเหมือนกันทุกกลุ่มเสมอ
     ฟังก์ชันนี้แปลงเฉพาะตอนแสดงผลให้ผู้ใช้เห็นเท่านั้น (ทุกกลุ่มต้องมี n_ups_per_group เท่ากัน
     เป็น setting เดียวกันทั้งโปรเจกต์ — ไม่รองรับกลุ่มที่มีจำนวน UPS ไม่เท่ากัน)
+
+    ใช้ _index_to_letters แทนการวน A-Z ตรงๆ เพราะ n_groups (สูงสุด 6) x n_ups_per_group (สูงสุด 6)
+    รวมได้ถึง 36 ตัว ซึ่งเกิน 26 ตัวอักษร — ถ้าวน A-Z ตรงๆ จะ wrap กลับไปชนตัวอักษรกลุ่มแรกซ้ำ
+    (เช่น กลุ่ม 5 จะโชว์ Y,Z,A,B ชนกับกลุ่ม 1) ตัวนี้ไปต่อเป็น AA, AB, ... แทน ไม่ชนกันแน่นอน
     """
-    import string
     group_units = get_group_ups_units(n_ups_per_group)
     idx = (gi - 1) * n_ups_per_group + group_units.index(u)
-    return string.ascii_uppercase[idx % 26]
+    return _index_to_letters(idx)
 
 
 # ── SLD DEFAULT VALUES (tab 4) ────────────────────────────────
