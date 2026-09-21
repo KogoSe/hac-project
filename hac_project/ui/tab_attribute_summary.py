@@ -2,7 +2,7 @@
 TAB: สรุปการคำนวณ Attribute — โชว์ว่าแต่ละ attribute ใน PTU_FIX มาจากไหน/คำนวณยังไง
 ก่อนถูกส่งไปที่ tab SLD Attributes (auto-fill ที่นั่นแล้ว — ยังแก้ manual ทับได้เหมือนเดิม)
 
-มีตัวเลือกกลุ่ม Generator Group เหมือน tab SLD — ทุกอย่างในหน้านี้ (RMU, Ground Cable,
+มีตัวเลือกกลุ่ม PTU Group เหมือน tab SLD — ทุกอย่างในหน้านี้ (RMU, Ground Cable,
 ตารางสรุป attribute) คำนวณจาก trafo_kva/gen_kw ของกลุ่มที่เลือกอยู่เท่านั้น
 ("group ใครกลุ่มมัน" ไม่มีค่ากลางรวมทุกกลุ่มแล้ว)
 
@@ -49,7 +49,7 @@ def render():
     # ── เลือกกลุ่ม Generator (แต่ละกลุ่มมีขนาดของตัวเองอิสระกัน) ──────────
     n_grp = st.session_state.get("n_groups", 3)
     grp_options = [f"Group {i}" for i in range(1, n_grp + 1)]
-    selected_grp = st.selectbox("เลือก Generator Group", options=grp_options, key="attr_summary_grp_select")
+    selected_grp = st.selectbox("เลือกกลุ่มPTU 1กลุ่ม ", options=grp_options, key="attr_summary_grp_select")
     gi = grp_options.index(selected_grp) + 1
 
     if gi > len(group_calcs):

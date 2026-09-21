@@ -182,7 +182,7 @@ def render():
     # ── เลือกกลุ่ม Generator ────────────────────────────────────
     n_grp = st.session_state.get("n_groups", 3)
     grp_options = [f"Group {i}" for i in range(1, n_grp + 1)]
-    selected_grp = st.selectbox("เลือก Generator Group", options=grp_options, key="sld_grp_select")
+    selected_grp = st.selectbox("เลือกกลุ่ม PTU", options=grp_options, key="sld_grp_select")
     grp_key = selected_grp.replace(" ", "_").lower()  # เช่น "group_1"
     gi = grp_options.index(selected_grp) + 1
 

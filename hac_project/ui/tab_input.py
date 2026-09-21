@@ -212,7 +212,7 @@ def render():
     # Settings
     st.divider()
     st.subheader("⚙️ ตั้งค่า Optimization")
-    n_groups = st.number_input("จำนวนกลุ่ม Generator (default = 3)", min_value=1, max_value=6, value=3, step=1)
+    n_groups = st.number_input("จำนวนกลุ่ม PTU 1กลุ่ม อาจมี 4,5,6 PTU(ABCD..) (default = 3)", min_value=1, max_value=6, value=3, step=1)
     st.session_state.n_groups = int(n_groups)
     n_ups_per_group = st.selectbox(
         "จำนวน PTU/UPS ต่อกลุ่ม",
