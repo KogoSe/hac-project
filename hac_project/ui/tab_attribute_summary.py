@@ -119,7 +119,7 @@ def render():
     rc1, rc2, rc3 = st.columns(3)
     rc1.metric("I_rated ต่อ RMU", f"{rmu_result['i_rated']:,.1f} A")
     rc2.metric("RMU_CB", f"{rmu_result['rmu_cb']:.0f} A" if rmu_result["rmu_cb"] else "❌ N/A")
-    rc3.metric("RMU_BUSBAR (I_rated × 4)", f"{rmu_result['rmu_busbar']:.0f} A" if rmu_result["rmu_busbar"] else "❌ N/A")
+    rc3.metric(f"RMU_BUSBAR (I_rated × {n_ups_per_group})", f"{rmu_result['rmu_busbar']:.0f} A" if rmu_result["rmu_busbar"] else "❌ N/A")
     if rmu_result["rmu_cb"] is None or rmu_result["rmu_busbar"] is None:
         st.error("❌ ไม่มีขนาด RMU (200A/630A) รองรับ I_rated ที่คำนวณได้ — ตรวจสอบขนาด Transformer อีกครั้ง")
 
