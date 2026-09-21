@@ -152,7 +152,7 @@ def render():
         badge_color = GROUP_BADGE_COLORS[(gi - 1) % len(GROUP_BADGE_COLORS)]
         st.markdown(
             f'<div style="background:{badge_color};padding:8px 16px;border-radius:8px;'
-            f'font-size:15px;font-weight:700;margin-bottom:10px">Generator Group {gi}</div>',
+            f'font-size:15px;font-weight:700;margin-bottom:10px">PTU Group {gi}</div>',
             unsafe_allow_html=True,
         )
 
