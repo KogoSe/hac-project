@@ -212,18 +212,21 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi):
         cell.number_format = "#,##0.00"
     row += 2
 
-    # ── Transmission loss (รอบ 1) ──
+    # ── Transmission loss (รอบ 1) — คิดแบบ loss ต้นทาง (ยืนยันโดยผู้ใช้ 2026-09): tx_loss% คือสัดส่วน
+    # ของกำลังไฟที่ส่งจริง (ต้นทาง) ไม่ใช่ % ของโหลดปลายทาง (Total Power Consumption) ที่รู้ค่าอยู่แล้ว
+    # จึงหารกลับ C{total_row}/(1-tx) เพื่อหาต้นทางก่อน แล้วลบ C{total_row}(ปลายทาง)ออกจึงได้ตัว loss เอง
+    # ตรงกับ compute_load_chain() ใน engine/sizing.py (connected_it = it_kw / (1 - tx))
     tx = cfg["tx_loss"]
     tx1_row = row
     ws.cell(row=row, column=2, value=f"Transmission loss {tx * 100:.1f}%")
-    ws.cell(row=row, column=3, value=f"=C{total_row}*{tx}")
+    ws.cell(row=row, column=3, value=f"=C{total_row}/(1-{tx})-C{total_row}")
     for sc in scenarios:
         for col_i in scenario_cols[sc]:
             if col_i == self_fail_col.get(sc):
                 _skip_cell(ws, tx1_row, col_i)
                 continue
             L = get_column_letter(col_i)
-            ws.cell(row=tx1_row, column=col_i, value=f"={L}{total_row}*{tx}")
+            ws.cell(row=tx1_row, column=col_i, value=f"={L}{total_row}/(1-{tx})-{L}{total_row}")
     for c in range(3, last_col + 1):
         cell = ws.cell(row=tx1_row, column=c)
         if cell.fill != GREY_SKIP_FILL:

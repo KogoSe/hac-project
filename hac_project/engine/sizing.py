@@ -30,15 +30,18 @@ def compute_load_chain(
     margin = cfg["design_margin"]
 
     def chain(it_kw):
-        # Step 2: Transmission loss ครั้งที่ 1 (IT → UPS)
-        connected_it = it_kw * (1 + tx)
+        # Step 2: Transmission loss ครั้งที่ 1 (IT → UPS) — คิดแบบ loss ต้นทาง (ยืนยันโดยผู้ใช้ 2026-09):
+        # tx_loss% คือสัดส่วนของกำลังไฟที่ส่งจริง (ต้นทาง) ไม่ใช่ % ของโหลดปลายทาง (IT Load) ที่รู้ค่าอยู่แล้ว
+        # จึงต้องหารกลับเพื่อหาต้นทาง ไม่ใช่คูณเพิ่มจากปลายทางตรงๆ
+        connected_it = it_kw / (1 - tx)
         # Step 3: UPS Loss + Charging
         ups_loss = connected_it * (1 / eff - 1)
         ups_total_out = connected_it + ups_loss + charging
         # Step 4: HVAC
         ptu_kw = ups_total_out + hvac
         ptu_kva = ptu_kw / pf
-        # Step 5: Transmission loss ครั้งที่ 2 (PTU → Generator/Transformer)
+        # Step 5: Transmission loss ครั้งที่ 2 (PTU → Generator/Transformer) — ยืนยันโดยผู้ใช้ให้คงแบบเดิม
+        # (คูณเพิ่มจากปลายทาง ไม่หารแบบ Step 2) แม้จะเป็น loss คนละแบบกับ Step 2 ก็ตาม
         total_connected = ptu_kw * (1 + tx)
         total_connected_kva = total_connected / pf
         # Step 6: Busway current

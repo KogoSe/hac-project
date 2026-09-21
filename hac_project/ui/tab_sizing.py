@@ -167,10 +167,11 @@ def render():
              "Fault = Max Fault Load ของกลุ่ม (Section 5 แท็บผลลัพธ์)",
              n_chain["it_kw"], f_chain["it_kw"]),
             ("2",  "+ Transmission Loss", "kW",
-             f"Max IT Load × tx_loss = Max IT Load × {cfg['tx_loss']:.3f}",
+             f"คิดแบบ loss ต้นทาง (tx_loss% ของกำลังไฟที่ส่งจริง ไม่ใช่ % ของ Max IT Load ปลายทาง) = "
+             f"Connected IT Load − Max IT Load = [Max IT Load ÷ (1 − {cfg['tx_loss']:.3f})] − Max IT Load",
              n_chain["connected_it"] - n_chain["it_kw"], f_chain["connected_it"] - f_chain["it_kw"]),
             ("2",  "= Connected IT Load  →  🔲 เลือก UPS", "kW",
-             "Max IT Load + Transmission Loss (แถวบน)",
+             f"Max IT Load ÷ (1 − tx_loss) = Max IT Load ÷ (1 − {cfg['tx_loss']:.3f})",
              n_chain["connected_it"], f_chain["connected_it"]),
             ("3",  "+ UPS Loss", "kW",
              f"Connected IT Load × (1/UPS Eff − 1) = Connected IT Load × (1/{cfg['ups_eff']:.3f} − 1)",
