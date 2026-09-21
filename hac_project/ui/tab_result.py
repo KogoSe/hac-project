@@ -127,6 +127,19 @@ def build_load_breakdown_table(grp: list[dict], gi: int) -> str:
             html.append(f'<td style="padding:6px 8px;border:1px solid #CBD5E1;{lb}{bg}text-align:right">{display}</td>')
     html.append("</tr>")
 
+    # Grand Total row ต่อ scenario — รวมจาก totals (float เต็ม ไม่ผ่านการปัดใดๆ) ไม่ใช่บวกเลขที่ปัดแล้ว
+    # ในตารางย้อนกลับ เพื่อยืนยันว่าทุก scenario กระจายโหลดรวมเท่ากันจริง (เผื่อกรณีบวกเลขที่ปัดแล้วในตาราง
+    # ด้วยมือแล้วผลรวมไม่ลงตัวเป๊ะ ซึ่งเป็นธรรมชาติของการปัดแยกแต่ละช่อง ไม่ใช่ค่าที่คำนวณผิด)
+    html.append('<tr style="background:#E2E8F0;font-weight:700">')
+    html.append('<td colspan="3" style="padding:6px 10px;border:1px solid #CBD5E1">รวมทั้งหมด (ยืนยันว่าเท่ากันทุก Scenario)</td>')
+    for sc in scenarios:
+        scenario_total = sum(totals[sc].values())
+        html.append(
+            f'<td colspan="4" style="padding:6px 10px;border:1px solid #CBD5E1;'
+            f'text-align:center">{scenario_total:,.1f}</td>'
+        )
+    html.append("</tr>")
+
     html.append("</table></div>")
     return "".join(html)
 
