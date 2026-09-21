@@ -109,8 +109,9 @@ def render():
     mv_voltage = mv_voltage_kv * 1000
     st.session_state.rmu_cfg = {"mv_voltage": mv_voltage, "rmu_sizes": [200, 630]}
 
+    n_ups_per_group = st.session_state.get("n_ups_per_group", 4)
     from engine.sizing import select_rmu_attributes
-    rmu_result = select_rmu_attributes(trafo_kva, mv_voltage, [200, 630])
+    rmu_result = select_rmu_attributes(trafo_kva, mv_voltage, [200, 630], n_ups_per_group=n_ups_per_group)
 
     rc1, rc2, rc3 = st.columns(3)
     rc1.metric("I_rated ต่อ RMU", f"{rmu_result['i_rated']:,.1f} A")

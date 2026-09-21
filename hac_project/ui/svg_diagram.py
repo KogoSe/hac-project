@@ -3,10 +3,10 @@ SVG DIAGRAM BUILDER — วาด HAC layout พร้อมระบายส�
 """
 import math
 
-from constants import GROUP_SVG_COLORS, UPS_UNITS, ups_display_label
+from constants import GROUP_SVG_COLORS, ups_display_label, get_group_ups_units
 
 
-def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
+def build_hac_svg(hac_list: list[dict], groups: list[list] = None, n_ups_per_group: int = 4) -> str:
     """
     วาด SVG แสดง HAC layout พร้อมระบายสีกลุ่ม
     hac_list: list of {"name": str, "rows": [{"side": "บน"/"ล่าง", "rack_list": [...], "source_type": str}, ...]}
@@ -28,9 +28,10 @@ def build_hac_svg(hac_list: list[dict], groups: list[list] = None) -> str:
     row_color_map = {}
     row_pair_map  = {}
     if groups:
+        ups_units = get_group_ups_units(n_ups_per_group)
         for gi, grp in enumerate(groups):
             color = GROUP_SVG_COLORS[gi % len(GROUP_SVG_COLORS)]
-            group_labels = {u: ups_display_label(gi + 1, u) for u in UPS_UNITS}
+            group_labels = {u: ups_display_label(gi + 1, u, n_ups_per_group) for u in ups_units}
             for row in grp:
                 row_color_map[(row["hac"], row["side"])] = color
                 pair = row.get("pair", "")

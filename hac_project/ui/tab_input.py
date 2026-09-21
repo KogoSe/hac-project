@@ -6,7 +6,7 @@ import pandas as pd
 import os
 import openpyxl
 
-from constants import SOURCE_OPTIONS
+from constants import SOURCE_OPTIONS, N_UPS_PER_GROUP_OPTIONS, get_group_ups_units
 from engine.optimization import DEFAULT_TIME_LIMIT
 from engine.pairing import parse_rack_layout
 from ui.svg_diagram import build_hac_svg
@@ -153,7 +153,8 @@ def render():
                 "Source Type",
                 options=SOURCE_OPTIONS,
                 required=True,
-                help="2-source = Dual-cord | 4-source = รับจากทุก UPS",
+                help="2-source = Dual-cord (จ่ายจาก 2 UPS) | 4-source = เสียบ 4 เส้นจริงทางกายภาพเสมอ "
+                     "(ถ้ากลุ่มมี UPS มากกว่า 4 ตัว MILP จะเลือกว่าเสียบเข้า 4 ตัวไหน)",
             ),
         },
         key="hac_editor",
@@ -211,8 +212,17 @@ def render():
     # Settings
     st.divider()
     st.subheader("⚙️ ตั้งค่า Optimization")
-    n_groups = st.number_input("จำนวนกลุ่ม กลุ่มนึงมี4PTU(A,B,C,D) (default = 3)", min_value=1, max_value=6, value=3, step=1)
+    n_groups = st.number_input("จำนวนกลุ่ม Generator (default = 3)", min_value=1, max_value=6, value=3, step=1)
     st.session_state.n_groups = int(n_groups)
+    n_ups_per_group = st.selectbox(
+        "จำนวน PTU/UPS ต่อกลุ่ม",
+        options=N_UPS_PER_GROUP_OPTIONS, index=0,
+        format_func=lambda n: f"{n} PTU ({''.join(get_group_ups_units(n))})",
+        help="ปกติกลุ่มนึงมี 4 PTU (A,B,C,D) — ถ้าเลือก 5/6 แถวที่เป็น 2-source จะจับคู่ (pair) ได้หลากหลาย"
+             "ขึ้นตามจำนวนที่เลือก (4→6 แบบ, 5→10 แบบ, 6→15 แบบ) ส่วนแถว 4-source ยังเสียบแค่ 4 เส้นเท่าเดิม"
+             "เพียงแต่ MILP จะเลือกด้วยว่าเสียบเข้า PTU ตัวไหนใน 5/6 ตัว",
+    )
+    st.session_state.n_ups_per_group = int(n_ups_per_group)
     time_limit = st.number_input(
         "Time Limit ต่อการ solve (วินาที)",
         min_value=5, max_value=1800, value=DEFAULT_TIME_LIMIT, step=5,

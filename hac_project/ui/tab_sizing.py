@@ -4,7 +4,7 @@ TAB 3: EQUIPMENT SIZING — เลือกขนาด UPS / Transformer / Gene
 import streamlit as st
 import pandas as pd
 
-from constants import UPS_UNITS, GROUP_BADGE_COLORS
+from constants import GROUP_BADGE_COLORS, get_group_ups_units
 from engine.pairing import compute_normal_loads, compute_fault_loads
 from engine.sizing import compute_load_chain, select_equipment, select_it_and_preups_busbar
 from engine.excel_export import build_excel_report
@@ -100,6 +100,8 @@ def render():
         st.info("ไปที่แท็บ **ผลลัพธ์** ก่อนเพื่อรัน MILP optimization")
         st.stop()
     groups_sz = milp_result_sz["groups"]
+    n_ups_per_group = milp_result_sz.get("n_ups_per_group", 4)
+    ups_units = get_group_ups_units(n_ups_per_group)
 
     # ── PASS 1: คำนวณ chain + equipment ของทุกกลุ่มก่อน ─────────
     st.divider()
@@ -108,10 +110,10 @@ def render():
 
     for gi, grp in enumerate(groups_sz, 1):
         grp_max_fault = 0.0
-        for faulted in UPS_UNITS:
-            loads = compute_fault_loads(grp, faulted)
+        for faulted in ups_units:
+            loads = compute_fault_loads(grp, faulted, ups_units)
             grp_max_fault = max(grp_max_fault, max(loads.values()))
-        norm_loads = compute_normal_loads(grp)
+        norm_loads = compute_normal_loads(grp, ups_units)
         grp_normal_total = max(norm_loads.values())
 
         chain = compute_load_chain(grp_max_fault, grp_normal_total, cfg)
@@ -217,7 +219,7 @@ def render():
         st.dataframe(chain_df, use_container_width=True, hide_index=True)
 
         # ── ส่วนที่ 2: Equipment Card ────────────────────────────
-        st.markdown("**Equipment Selection (4 sets — 4N3)**")
+        st.markdown(f"**Equipment Selection ({n_ups_per_group} sets — {n_ups_per_group}N{n_ups_per_group - 1})**")
         eq_cols = st.columns(4)
         eq_items = [
             ("UPS",         equip["ups"],    "kW"),
@@ -268,6 +270,7 @@ def render():
         groups=groups_sz,
         cfg=cfg,
         group_calcs=group_calcs,
+        n_ups_per_group=n_ups_per_group,
     )
     st.download_button(
         "⬇️ Download Excel Report (.xlsx)",

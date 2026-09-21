@@ -4,55 +4,51 @@ TAB 2: RESULTS — Pairing Optimization ผลลัพธ์
 import streamlit as st
 import pandas as pd
 
-from constants import UPS_UNITS, GROUP_BADGE_COLORS, ups_display_label
+from constants import GROUP_BADGE_COLORS, ups_display_label, get_group_ups_units
 from engine.pairing import (
     parse_rack_layout, build_row_units, compute_normal_loads, compute_fault_loads,
 )
 from engine.optimization import DEFAULT_TIME_LIMIT, solve_pairing_milp, solve_pairing_milp_free
 from ui.svg_diagram import build_hac_svg
 
-# ── สีสำหรับตาราง Load Breakdown ─────────────────────────────
-SCENARIO_HEADER_COLOR = {
-    "Normal": "#F1F5F9",
-    "A": "#DBEAFE",
-    "B": "#DCFCE7",
-    "C": "#FEF3C7",
-    "D": "#F3E8FF",
-}
-SCENARIO_BORDER_COLOR = {
-    "Normal": "#94A3B8",
-    "A": "#3B82F6",
-    "B": "#22C55E",
-    "C": "#F59E0B",
-    "D": "#A855F7",
-}
+# ── สีสำหรับตาราง Load Breakdown — ไล่ตามตำแหน่ง UPS ในกลุ่ม (ไม่ผูกกับชื่อตัวอักษรตายตัวอีกแล้ว
+# เพราะจำนวน UPS ต่อกลุ่มปรับได้ 4/5/6) วนซ้ำถ้า UPS มากกว่าจำนวนสีที่มี ──────────────────
+SCENARIO_HEADER_COLORS = ["#DBEAFE", "#DCFCE7", "#FEF3C7", "#F3E8FF", "#FCE7F3", "#E0F2FE"]
+SCENARIO_BORDER_COLORS = ["#3B82F6", "#22C55E", "#F59E0B", "#A855F7", "#EC4899", "#0EA5E9"]
+NORMAL_HEADER_COLOR = "#F1F5F9"
+NORMAL_BORDER_COLOR = "#94A3B8"
 FAIL_BG = "#FEE2E2"
 FAIL_TEXT = "#DC2626"
 MAX_HIGHLIGHT_BG = "#FDE68A"
 
 
-def build_load_breakdown_table(grp: list[dict], gi: int) -> str:
+def build_load_breakdown_table(grp: list[dict], gi: int, ups_units: list, n_ups_per_group: int) -> str:
     """สร้าง HTML table แสดง load แต่ละแถวต่อ UPS ทุก scenario (Normal + Fault ทีละตัว)"""
-    scenarios = ["Normal"] + UPS_UNITS  # ["Normal","A","B","C","D"] (key ภายใน — ป้ายแสดงผลแปลงแยกด้านล่าง)
-    labels = {u: ups_display_label(gi, u) for u in UPS_UNITS}
+    scenarios = ["Normal"] + ups_units  # key ภายใน (A,B,C,...) — ป้ายแสดงผลแปลงแยกด้านล่าง
+    labels = {u: ups_display_label(gi, u, n_ups_per_group) for u in ups_units}
+    border_color = {"Normal": NORMAL_BORDER_COLOR}
+    header_color = {"Normal": NORMAL_HEADER_COLOR}
+    for i, u in enumerate(ups_units):
+        border_color[u] = SCENARIO_BORDER_COLORS[i % len(SCENARIO_BORDER_COLORS)]
+        header_color[u] = SCENARIO_HEADER_COLORS[i % len(SCENARIO_HEADER_COLORS)]
 
     row_labels = []
     values = []  # list of {scenario: {unit: float|None|"FAIL"}}
-    totals = {sc: {u: 0.0 for u in UPS_UNITS} for sc in scenarios}
+    totals = {sc: {u: 0.0 for u in ups_units} for sc in scenarios}
 
     for row in grp:
         row_labels.append((row["hac"], row["side"], row["kw"]))
         row_vals = {}
 
-        n = compute_normal_loads([row])
-        row_vals["Normal"] = {u: (n[u] if n[u] else None) for u in UPS_UNITS}
-        for u in UPS_UNITS:
+        n = compute_normal_loads([row], ups_units)
+        row_vals["Normal"] = {u: (n[u] if n[u] else None) for u in ups_units}
+        for u in ups_units:
             totals["Normal"][u] += n[u]
 
-        for faulted in UPS_UNITS:
-            f = compute_fault_loads([row], faulted)
+        for faulted in ups_units:
+            f = compute_fault_loads([row], faulted, ups_units)
             sc_vals = {}
-            for u in UPS_UNITS:
+            for u in ups_units:
                 if u == faulted:
                     sc_vals[u] = "FAIL"
                 else:
@@ -68,6 +64,7 @@ def build_load_breakdown_table(grp: list[dict], gi: int) -> str:
         for sc in scenarios
     }
 
+    n_units = len(ups_units)
     html = ['<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:13px;width:100%">']
 
     # Header แถว 1 — ชื่อ scenario
@@ -77,19 +74,19 @@ def build_load_breakdown_table(grp: list[dict], gi: int) -> str:
     html.append('<th style="padding:6px 10px;background:#E2E8F0;border:1px solid #CBD5E1">kW</th>')
     for sc in scenarios:
         label = "Normal" if sc == "Normal" else f"{labels[sc]} Fail"
-        border, bg = SCENARIO_BORDER_COLOR[sc], SCENARIO_HEADER_COLOR[sc]
+        border, bg = border_color[sc], header_color[sc]
         html.append(
-            f'<th colspan="4" style="padding:6px 10px;background:{bg};'
+            f'<th colspan="{n_units}" style="padding:6px 10px;background:{bg};'
             f'border:1px solid #CBD5E1;border-left:4px solid {border};text-align:center">{label}</th>'
         )
     html.append("</tr>")
 
-    # Header แถว 2 — A B C D
+    # Header แถว 2 — ตัวอักษร UPS แต่ละตัว
     html.append("<tr>")
     html.append('<th style="border:1px solid #CBD5E1;background:#F8FAFC"></th>' * 3)
     for sc in scenarios:
-        border = SCENARIO_BORDER_COLOR[sc]
-        for i, u in enumerate(UPS_UNITS):
+        border = border_color[sc]
+        for i, u in enumerate(ups_units):
             lb = f"border-left:4px solid {border};" if i == 0 else ""
             html.append(f'<th style="padding:4px 8px;background:#F8FAFC;border:1px solid #CBD5E1;{lb}">{labels[u]}</th>')
     html.append("</tr>")
@@ -101,8 +98,8 @@ def build_load_breakdown_table(grp: list[dict], gi: int) -> str:
         html.append(f'<td style="padding:5px 10px;border:1px solid #E2E8F0">{side}</td>')
         html.append(f'<td style="padding:5px 10px;border:1px solid #E2E8F0;text-align:right">{kw:,.0f}</td>')
         for sc in scenarios:
-            border = SCENARIO_BORDER_COLOR[sc]
-            for i, u in enumerate(UPS_UNITS):
+            border = border_color[sc]
+            for i, u in enumerate(ups_units):
                 val = row_vals[sc][u]
                 lb = f"border-left:4px solid {border};" if i == 0 else ""
                 if val == "FAIL":
@@ -117,8 +114,8 @@ def build_load_breakdown_table(grp: list[dict], gi: int) -> str:
     html.append('<tr style="background:#F1F5F9;font-weight:700">')
     html.append('<td colspan="3" style="padding:6px 10px;border:1px solid #CBD5E1">Total Power Consumption</td>')
     for sc in scenarios:
-        border = SCENARIO_BORDER_COLOR[sc]
-        for i, u in enumerate(UPS_UNITS):
+        border = border_color[sc]
+        for i, u in enumerate(ups_units):
             lb = f"border-left:4px solid {border};" if i == 0 else ""
             total_val = totals[sc][u]
             is_max = max_per_scenario[sc] is not None and total_val == max_per_scenario[sc] and total_val > 0
@@ -135,7 +132,7 @@ def build_load_breakdown_table(grp: list[dict], gi: int) -> str:
     for sc in scenarios:
         scenario_total = sum(totals[sc].values())
         html.append(
-            f'<td colspan="4" style="padding:6px 10px;border:1px solid #CBD5E1;'
+            f'<td colspan="{n_units}" style="padding:6px 10px;border:1px solid #CBD5E1;'
             f'text-align:center">{scenario_total:,.1f}</td>'
         )
     html.append("</tr>")
@@ -160,6 +157,8 @@ def render():
         st.stop()
 
     n_groups = st.session_state.get("n_groups", 3)
+    n_ups_per_group = st.session_state.get("n_ups_per_group", 4)
+    ups_units = get_group_ups_units(n_ups_per_group)
     time_limit = st.session_state.get("time_limit", DEFAULT_TIME_LIMIT)
     mode = st.session_state.get("optimization_mode", "contiguous")
 
@@ -180,17 +179,18 @@ def render():
         tuple(tuple((r["hac"], r["side"]) for r in grp) for grp in warm_start_groups)
         if warm_start_groups else None
     )
-    solve_key = (rows_key, n_groups, mode, time_limit, warm_key)
+    solve_key = (rows_key, n_groups, n_ups_per_group, mode, time_limit, warm_key)
 
     if st.session_state.get("milp_cache_key") == solve_key and st.session_state.get("milp_result") is not None:
         milp_result = st.session_state.milp_result
     else:
         if mode == "free":
             milp_result = solve_pairing_milp_free(
-                row_units, n_groups, time_limit=time_limit, warm_start_groups=warm_start_groups
+                row_units, n_groups, n_ups_per_group=n_ups_per_group,
+                time_limit=time_limit, warm_start_groups=warm_start_groups
             )
         else:
-            milp_result = solve_pairing_milp(row_units, n_groups, time_limit=time_limit)
+            milp_result = solve_pairing_milp(row_units, n_groups, n_ups_per_group=n_ups_per_group, time_limit=time_limit)
             st.session_state.last_contiguous_groups = milp_result["groups"]
         st.session_state.milp_result = milp_result  # ให้ tab_proof.py ใช้ต่อ (ไม่ solve ซ้ำ)
         st.session_state.milp_cache_key = solve_key
@@ -236,7 +236,7 @@ def render():
         }
         for name, grp in edited_df.groupby("HAC Name", sort=False)
     ]
-    st.markdown(build_hac_svg(hac_list, groups), unsafe_allow_html=True)
+    st.markdown(build_hac_svg(hac_list, groups, n_ups_per_group), unsafe_allow_html=True)
 
     # ── SECTION 2: PAIRING TABLE ─────────────────────────────────
     st.header("2 — Pairing แต่ละแถว")
@@ -247,26 +247,24 @@ def render():
             f'font-weight:700;margin-bottom:6px">PTU Group {gi}</div>',
             unsafe_allow_html=True,
         )
-        labels = {u: ups_display_label(gi, u) for u in UPS_UNITS}
+        labels = {u: ups_display_label(gi, u, n_ups_per_group) for u in ups_units}
         rows_out = []
         for row in grp:
-            n = compute_normal_loads([row])
+            n = compute_normal_loads([row], ups_units)
             src_label = row["source_type"]
+            pair_label = "".join(labels[ch] for ch in row["pair"])
             if row["source_type"] == "4-source":
-                pair_label = "".join(labels[u] for u in UPS_UNITS) + " (25% each)"
-            else:
-                pair_label = "".join(labels[ch] for ch in row["pair"])
-            rows_out.append({
-                "HAC":         row["hac"],
-                "แถว":         row["side"],
-                "Source":      src_label,
-                "kW":          f"{row['kw']:,.0f}",
-                "Pairing":     pair_label,
-                f"→{labels['A']}": f"{n['A']:,.0f}" if n["A"] else "—",
-                f"→{labels['B']}": f"{n['B']:,.0f}" if n["B"] else "—",
-                f"→{labels['C']}": f"{n['C']:,.0f}" if n["C"] else "—",
-                f"→{labels['D']}": f"{n['D']:,.0f}" if n["D"] else "—",
-            })
+                pair_label += f" ({100 / len(row['pair']):.0f}% each)"
+            row_out = {
+                "HAC":     row["hac"],
+                "แถว":     row["side"],
+                "Source":  src_label,
+                "kW":      f"{row['kw']:,.0f}",
+                "Pairing": pair_label,
+            }
+            for u in ups_units:
+                row_out[f"→{labels[u]}"] = f"{n[u]:,.0f}" if n[u] else "—"
+            rows_out.append(row_out)
         st.dataframe(pd.DataFrame(rows_out), use_container_width=True, hide_index=True)
 
     # ── SECTION 3: NORMAL LOAD ───────────────────────────────────
@@ -274,16 +272,12 @@ def render():
     # รายกลุ่มแทนตารางรวม เพราะชื่อคอลัมน์ A/B/C/D ไม่ตรงกันข้ามกลุ่มแล้ว
     st.header("3 — Normal Operation Load ต่อ UPS ต่อกลุ่ม")
     for gi, grp in enumerate(groups, 1):
-        n = compute_normal_loads(grp)
-        labels = {u: ups_display_label(gi, u) for u in UPS_UNITS}
-        norm_row = {
-            "กลุ่ม":      f"Group{gi}",
-            f"{labels['A']} (kW)": f"{n['A']:,.0f}",
-            f"{labels['B']} (kW)": f"{n['B']:,.0f}",
-            f"{labels['C']} (kW)": f"{n['C']:,.0f}",
-            f"{labels['D']} (kW)": f"{n['D']:,.0f}",
-            "Total (kW)": f"{sum(n.values()):,.0f}",
-        }
+        n = compute_normal_loads(grp, ups_units)
+        labels = {u: ups_display_label(gi, u, n_ups_per_group) for u in ups_units}
+        norm_row = {"กลุ่ม": f"Group{gi}"}
+        for u in ups_units:
+            norm_row[f"{labels[u]} (kW)"] = f"{n[u]:,.0f}"
+        norm_row["Total (kW)"] = f"{sum(n.values()):,.0f}"
         st.dataframe(pd.DataFrame([norm_row]), use_container_width=True, hide_index=True)
 
     # ── SECTION 4: FAILURE CONDITIONS — Load Breakdown ───────────
@@ -294,13 +288,13 @@ def render():
     for gi, grp in enumerate(groups, 1):
         # คำนวณ max fault load ของกลุ่ม (ใช้ต่อใน Section 5)
         grp_max = 0.0
-        for faulted in UPS_UNITS:
-            loads = compute_fault_loads(grp, faulted)
+        for faulted in ups_units:
+            loads = compute_fault_loads(grp, faulted, ups_units)
             grp_max = max(grp_max, max(loads.values()))
         group_max_faults.append({"กลุ่ม": f"Group{gi}", "Max Fault Load (kW)": grp_max})
 
         with st.expander(f"📋 PTU Group {gi} — Load Breakdown", expanded=False):
-            st.markdown(build_load_breakdown_table(grp, gi), unsafe_allow_html=True)
+            st.markdown(build_load_breakdown_table(grp, gi, ups_units, n_ups_per_group), unsafe_allow_html=True)
 
     # ── SECTION 5: SUMMARY ───────────────────────────────────────
     st.header("5 — สรุป Max Load When Fault Condition ทุกกลุ่ม")

@@ -14,7 +14,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from constants import UPS_UNITS, ups_display_label
+from constants import ups_display_label, get_group_ups_units
 from engine.pairing import compute_normal_loads, compute_fault_loads
 
 # ── ธีมสี "Data Center / Engineering Navy" ──────────────
@@ -74,25 +74,26 @@ def _skip_cell(ws, row, col):
     return c
 
 
-def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi):
+def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
     """
     Sheet รายกลุ่ม — Load Calculation รายแถว (Normal + Fault ทุก scenario)
     ตามโครงสร้าง 'L3 (PTU-...)' ของ template: ต่อ 1 แถว(HAC Row) มีคอลัมน์
-    kW/PF/kW แล้วตามด้วย Normal(A,B,C,D) + spacer + [Fail A: B,C,D] + spacer +
-    [Fail B: A,C,D] + spacer + [Fail C: A,B,D] + spacer + [Fail D: A,B,C]
-    (ตัวอักษร A-D เป็น key คำนวณภายในเสมอ — ป้ายแสดงผลไล่ต่อเนื่องตามกลุ่มจริงผ่าน ups_display_label)
+    kW/PF/kW แล้วตามด้วย Normal(A,B,C,...) + spacer + [Fail A: ที่เหลือ] + spacer + ... ไล่ตาม
+    n_ups_per_group (4 ตัวอักษร A-D เป็นค่า default — ตัวอักษรเป็น key คำนวณภายในเสมอ
+    ป้ายแสดงผลไล่ต่อเนื่องตามกลุ่มจริงผ่าน ups_display_label)
     """
     ws = wb.create_sheet(title=sheet_title[:31])
     ws.sheet_view.showGridLines = False
-    scenarios = ["Normal"] + UPS_UNITS
-    labels = {u: ups_display_label(gi, u) for u in UPS_UNITS}
+    ups_units = get_group_ups_units(n_ups_per_group)
+    scenarios = ["Normal"] + ups_units
+    labels = {u: ups_display_label(gi, u, n_ups_per_group) for u in ups_units}
 
     # ── กำหนดตำแหน่งคอลัมน์ (F=6 เป็นต้นไป, เว้น 1 คอลัมน์คั่นทุก scenario) ──
     col = 6
     scenario_cols = {}
     for sc in scenarios:
-        scenario_cols[sc] = list(range(col, col + 4))
-        col += 5  # 4 คอลัมน์ + spacer
+        scenario_cols[sc] = list(range(col, col + n_ups_per_group))
+        col += n_ups_per_group + 1  # n_ups_per_group คอลัมน์ + spacer
     last_col = col - 2
 
     # ── คอลัมน์ "self-fail" ของแต่ละ scenario fail (เช่น คอลัมน์ A ในบล็อก A Failure) ──
@@ -102,7 +103,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi):
     for sc in scenarios:
         if sc == "Normal":
             continue
-        for u, col_i in zip(UPS_UNITS, scenario_cols[sc]):
+        for u, col_i in zip(ups_units, scenario_cols[sc]):
             if u == sc:
                 self_fail_col[sc] = col_i
 
@@ -138,7 +139,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi):
         c.font = BOLD
         c.alignment = CENTER
     for sc in scenarios:
-        for u, col_i in zip(UPS_UNITS, scenario_cols[sc]):
+        for u, col_i in zip(ups_units, scenario_cols[sc]):
             is_fail_col = (sc != "Normal" and u == sc)
             cell = ws.cell(row=4, column=col_i, value=(f"{labels[u]} Fail" if is_fail_col else f"Load {labels[u]}"))
             cell.alignment = CENTER
@@ -168,14 +169,14 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi):
         ws.cell(row=row, column=4, value=1.0)
         ws.cell(row=row, column=5, value=r["kw"])
 
-        n = compute_normal_loads([r])
-        for u, col_i in zip(UPS_UNITS, scenario_cols["Normal"]):
+        n = compute_normal_loads([r], ups_units)
+        for u, col_i in zip(ups_units, scenario_cols["Normal"]):
             v = n.get(u, 0.0)
             ws.cell(row=row, column=col_i, value=(v if v else None))
 
-        for faulted in UPS_UNITS:
-            f = compute_fault_loads([r], faulted)
-            for u, col_i in zip(UPS_UNITS, scenario_cols[faulted]):
+        for faulted in ups_units:
+            f = compute_fault_loads([r], faulted, ups_units)
+            for u, col_i in zip(ups_units, scenario_cols[faulted]):
                 if u == faulted:
                     cell = ws.cell(row=row, column=col_i, value="FAIL")
                     cell.font = RED_BOLD
@@ -368,11 +369,12 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi):
     return ws
 
 
-def _write_summary_sheet(wb, groups_data):
+def _write_summary_sheet(wb, groups_data, n_ups_per_group=4):
     """
     Sheet 'Summary' — Load Transfer Under Failure (ต่อกลุ่ม) + Main Equipment Sizing
-    groups_data: list ของ {"name": str, "grp": list[dict], "equip": dict}
+    groups_data: list ของ {"name": str, "grp": list[dict], "equip": dict, "gi": int}
     """
+    ups_units = get_group_ups_units(n_ups_per_group)
     ws = wb.create_sheet(title="Summary", index=0)
     ws.sheet_view.showGridLines = False
     ws.merge_cells("A1:H1")
@@ -385,24 +387,24 @@ def _write_summary_sheet(wb, groups_data):
     row = 3
     for gd in groups_data:
         name, grp, equip, gi = gd["name"], gd["grp"], gd["equip"], gd["gi"]
-        labels = {u: ups_display_label(gi, u) for u in UPS_UNITS}
+        labels = {u: ups_display_label(gi, u, n_ups_per_group) for u in ups_units}
 
         card1_top = row
         ws.cell(row=row, column=1, value=f"{name} — Load Transfer Under Failure (kW)").font = Font(bold=True, color=NAVY, size=11)
         row += 1
         ws.cell(row=row, column=1, value="System").font = BOLD
         ws.cell(row=row, column=1).fill = HEADER_GREY
-        for i, u in enumerate(UPS_UNITS):
+        for i, u in enumerate(ups_units):
             c = ws.cell(row=row, column=2 + i, value=labels[u])
             c.font = WHITE_BOLD
             c.fill = TITLE_FILL
             c.alignment = CENTER
         row += 1
 
-        for faulted in UPS_UNITS:
-            f = compute_fault_loads(grp, faulted)
+        for faulted in ups_units:
+            f = compute_fault_loads(grp, faulted, ups_units)
             ws.cell(row=row, column=1, value=f"{labels[faulted]} Failed").font = BOLD
-            for i, u in enumerate(UPS_UNITS):
+            for i, u in enumerate(ups_units):
                 cell = ws.cell(row=row, column=2 + i)
                 if u == faulted:
                     cell.value = None
@@ -414,7 +416,7 @@ def _write_summary_sheet(wb, groups_data):
                     cell.alignment = Alignment(horizontal="right", vertical="center")
             row += 1
         card1_bottom = row - 1
-        _card_outline(ws, card1_top + 1, 1, card1_bottom, 5)
+        _card_outline(ws, card1_top + 1, 1, card1_bottom, 1 + n_ups_per_group)
         row += 2
 
         card2_top = row
@@ -465,13 +467,14 @@ def _write_summary_sheet(wb, groups_data):
     return ws
 
 
-def build_excel_report(groups: list, cfg: dict, group_calcs: list) -> bytes:
+def build_excel_report(groups: list, cfg: dict, group_calcs: list, n_ups_per_group: int = 4) -> bytes:
     """
-    groups       : list ของ list[dict] — ผลจาก milp_result["groups"] (1 list ต่อ 1 PTU group)
-    cfg          : st.session_state.sizing_cfg (assumption ล่าสุด)
-    group_calcs  : st.session_state.sizing_group_calcs -> [{"gi", "chain", "equip"}, ...]
-                   (equip เป็นขนาดของกลุ่มนั้นๆ อิสระจากกลุ่มอื่น — group ใครกลุ่มมัน,
-                   ไม่ unify ข้ามกลุ่มแล้ว — จาก PASS 1 ใน tab_sizing.py)
+    groups          : list ของ list[dict] — ผลจาก milp_result["groups"] (1 list ต่อ 1 PTU group)
+    cfg             : st.session_state.sizing_cfg (assumption ล่าสุด)
+    group_calcs     : st.session_state.sizing_group_calcs -> [{"gi", "chain", "equip"}, ...]
+                      (equip เป็นขนาดของกลุ่มนั้นๆ อิสระจากกลุ่มอื่น — group ใครกลุ่มมัน,
+                      ไม่ unify ข้ามกลุ่มแล้ว — จาก PASS 1 ใน tab_sizing.py)
+    n_ups_per_group : จำนวน PTU/UPS ต่อกลุ่ม (4/5/6) — จาก milp_result["n_ups_per_group"]
 
     คืนค่าเป็น bytes ของไฟล์ .xlsx พร้อมส่งให้ st.download_button ใช้ตรงๆ
     """
@@ -484,10 +487,10 @@ def build_excel_report(groups: list, cfg: dict, group_calcs: list) -> bytes:
         grp = groups[gi - 1]
         equip = calc["equip"]
         name = f"Group {gi}"
-        _write_group_sheet(wb, name, grp, cfg, equip, gi)
+        _write_group_sheet(wb, name, grp, cfg, equip, gi, n_ups_per_group)
         groups_data.append({"name": name, "grp": grp, "equip": equip, "gi": gi})
 
-    _write_summary_sheet(wb, groups_data)
+    _write_summary_sheet(wb, groups_data, n_ups_per_group)
 
     buf = io.BytesIO()
     wb.save(buf)

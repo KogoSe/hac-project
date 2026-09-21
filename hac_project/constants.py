@@ -2,9 +2,19 @@
 # CONSTANTS — ใช้ร่วมกันทั้ง engine และ ui
 # ═══════════════════════════════════════════════════════════════
 
-UPS_UNITS      = ["A", "B", "C", "D"]
-PAIR_ROTATION  = ["AB", "CD", "AC", "BD", "AD", "BC"]  # non-overlapping rotation
+UPS_UNITS      = ["A", "B", "C", "D"]  # default 4 ตัวต่อกลุ่ม — ใช้เป็น fallback เมื่อไม่ได้ระบุ n_ups_per_group
+N_UPS_PER_GROUP_OPTIONS = [4, 5, 6]     # ตัวเลือกจำนวน UPS ต่อกลุ่มที่รองรับ (default = 4)
+PAIR_ROTATION  = ["AB", "CD", "AC", "BD", "AD", "BC"]  # non-overlapping rotation (เฉพาะกรณี n=4, legacy/ไม่ได้ใช้จริงแล้ว)
 SOURCE_OPTIONS = ["2-source", "4-source"]
+
+
+def get_group_ups_units(n_ups_per_group: int) -> list:
+    """
+    รายชื่อ UPS ภายในกลุ่ม (ตัวอักษร A, B, C, ... ยาวตาม n_ups_per_group) — ใช้เป็น "key คำนวณ"
+    ภายใน engine เท่านั้น (คนละเรื่องกับ ups_display_label ที่ไล่ตัวอักษรต่อเนื่องข้ามกลุ่มสำหรับแสดงผล)
+    """
+    import string
+    return list(string.ascii_uppercase[:n_ups_per_group])
 
 PAIR_COLORS = {
     "AB": "#B5D4F4", "AC": "#9FE1CB", "AD": "#C0DD97",
@@ -15,15 +25,18 @@ GROUP_BADGE_COLORS = ["#DBEAFE", "#DCFCE7", "#FEF9C3", "#FCE7F3", "#F3E8FF"]
 GROUP_SVG_COLORS   = ["#DBEAFE", "#DCFCE7", "#FEF9C3", "#FCE7F3", "#F3E8FF"]
 
 
-def ups_display_label(gi: int, u: str) -> str:
+def ups_display_label(gi: int, u: str, n_ups_per_group: int = 4) -> str:
     """
-    ชื่อ UPS ที่ใช้แสดงผลจริง (ไล่ตัวอักษรต่อเนื่องข้ามกลุ่ม) — เช่น กลุ่ม 1 = A,B,C,D,
-    กลุ่ม 2 = E,F,G,H, กลุ่ม 3 = I,J,K,L, ... ภายใน engine ยังใช้ A/B/C/D เดิมของ UPS_UNITS
-    เป็น key คำนวณเหมือนเดิมทุกกลุ่ม ฟังก์ชันนี้แปลงเฉพาะตอนแสดงผลให้ผู้ใช้เห็นเท่านั้น
+    ชื่อ UPS ที่ใช้แสดงผลจริง (ไล่ตัวอักษรต่อเนื่องข้ามกลุ่ม) — เช่น n_ups_per_group=4: กลุ่ม 1 = A,B,C,D,
+    กลุ่ม 2 = E,F,G,H, ... | n_ups_per_group=5: กลุ่ม 1 = A,B,C,D,E, กลุ่ม 2 = F,G,H,I,J, ...
+    ภายใน engine ยังใช้ A,B,C,... (จาก get_group_ups_units) เป็น key คำนวณเหมือนกันทุกกลุ่มเสมอ
+    ฟังก์ชันนี้แปลงเฉพาะตอนแสดงผลให้ผู้ใช้เห็นเท่านั้น (ทุกกลุ่มต้องมี n_ups_per_group เท่ากัน
+    เป็น setting เดียวกันทั้งโปรเจกต์ — ไม่รองรับกลุ่มที่มีจำนวน UPS ไม่เท่ากัน)
     """
     import string
-    idx = (gi - 1) * len(UPS_UNITS) + UPS_UNITS.index(u)
-    return string.ascii_uppercase[idx]
+    group_units = get_group_ups_units(n_ups_per_group)
+    idx = (gi - 1) * n_ups_per_group + group_units.index(u)
+    return string.ascii_uppercase[idx % 26]
 
 
 # ── SLD DEFAULT VALUES (tab 4) ────────────────────────────────

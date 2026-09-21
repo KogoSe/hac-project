@@ -593,8 +593,8 @@ def build_optimization_proof_docx(proof_context: dict | None = None, mode: str =
         ["Bound", "Definition", "Tightness"],
         [
             ["Solver lower bound", "The LP-relaxation-plus-cuts bound CBC itself proves during the search. If CBC's log reports no explicit bound but the run is proven optimal, this value is taken to equal M* itself, since a proven optimum has zero gap to its own lower bound by definition.", "Tightest — accounts for the specific solution structure"],
-            ["Theoretical lower bound (per solved grouping)", "max over groups of (group total kW) / 3 — the floor if a group's load could be split perfectly evenly across the 3 surviving units", "Looser sanity check tied to the actual grouping found"],
-            ["Global theoretical lower bound", "(total kW across all rows / number of groups) / 3 — independent of how rows are actually grouped", "Loosest — a floor that holds regardless of solution details"],
+            ["Theoretical lower bound (per solved grouping)", "max over groups of (group total kW) / (n_ups_per_group - 1) — the floor if a group's load could be split perfectly evenly across the surviving units after one fails", "Looser sanity check tied to the actual grouping found"],
+            ["Global theoretical lower bound", "(total kW across all rows / number of groups) / (n_ups_per_group - 1) — independent of how rows are actually grouped", "Loosest — a floor that holds regardless of solution details"],
         ],
         col_widths_cm=[3.5, 8, 4],
     )
@@ -699,9 +699,10 @@ def build_optimization_proof_docx(proof_context: dict | None = None, mode: str =
             ["Solver relative gap tolerance", "DEFAULT_GAP_REL", "0.01 (1%)", "Section 4.5"],
             ["Objective tie-break weight", "EPS_TIE_BREAK", "1e-5", "Section 4.4"],
             ["Bottleneck-group floating-point tolerance", "BOTTLENECK_TOL", "1e-6", "Sections 4.3, 6.3"],
-            ["Max 2-source rows per group for brute-force check", "max_two_source", "8 rows (6^8 = 1,679,616 combinations)", "Section 6.3"],
-            ["UPS units per group", "UPS_UNITS", "A, B, C, D (4 units)", "Section 2"],
-            ["Possible 2-source pairs", "PAIRS", "AB, AC, AD, BC, BD, CD (6 pairs)", "Section 2"],
+            ["Max combos (pairs^k2 x quads^k4) per group for brute-force check", "MAX_BRUTE_FORCE_COMBOS", "2,000,000 combinations", "Section 6.3"],
+            ["UPS units per group (user-configurable: 4, 5, or 6)", "get_group_ups_units(n)", "A, B, C, D (default 4) — up to 6 (A..F)", "Section 2"],
+            ["Possible 2-source pairs (2 of n UPS units)", "get_pairs(ups_units)", "6 pairs (n=4) / 10 (n=5) / 15 (n=6)", "Section 2"],
+            ["Possible 4-source quads (4 of n UPS units, physically limited to 4 feeds)", "get_quads(ups_units)", "1 quad (n=4) / 5 (n=5) / 15 (n=6)", "Section 2"],
         ],
         col_widths_cm=[5, 4.5, 4.5, 2.5],
     )
@@ -756,7 +757,7 @@ def build_optimization_proof_docx(proof_context: dict | None = None, mode: str =
         for gc in proof_context["group_checks"]:
             chk = gc["brute_force"]
             if chk is None:
-                bf_text = f"skipped (> {proof_context['max_two_source']} two-source rows)"
+                bf_text = f"skipped (combos exceed {proof_context['max_combos']:,})"
                 match_text = "not checked"
             else:
                 bf_text = f"{chk['brute_force_best']:,.1f} kW ({chk['combinations_tried']:,} combos)"
@@ -764,15 +765,16 @@ def build_optimization_proof_docx(proof_context: dict | None = None, mode: str =
             group_rows.append([
                 f"Group {gc['index']}" + (" (bottleneck)" if gc["is_bottleneck"] else ""),
                 gc["n_two_source"],
+                gc.get("n_four_source", 0),
                 f"{gc['group_max']:,.1f} kW",
                 bf_text,
                 match_text,
             ])
         _add_table(
             doc,
-            ["Group", "2-source rows", "MILP max-fail", "Brute-force best", "Result"],
+            ["Group", "2-source rows", "4-source rows", "MILP max-fail", "Brute-force best", "Result"],
             group_rows,
-            col_widths_cm=[3, 2.2, 3, 4.3, 3.5],
+            col_widths_cm=[2.6, 1.9, 1.9, 2.6, 3.8, 3.2],
         )
 
         _heading(doc, "B.4 Interpretation", level=2)

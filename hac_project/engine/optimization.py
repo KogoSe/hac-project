@@ -1,69 +1,98 @@
 """
-ENGINE — MILP Optimization: grouping (contiguous cut) + pairing (2-source) รวมเป็นโมเดลเดียว
-เป้าหมาย: minimize max-fail-load (โหลดสูงสุดเมื่อ UPS 1 ตัวพัง) ในบรรดาทุกกลุ่ม
-ไม่มี st. ใดๆ ในไฟล์นี้ (แยกจาก UI เหมือน engine อื่น)
+ENGINE — MILP Optimization: grouping (contiguous cut) + pairing (2-source) + quad-assignment
+(4-source) รวมเป็นโมเดลเดียว เป้าหมาย: minimize max-fail-load (โหลดสูงสุดเมื่อ UPS 1 ตัวพัง)
+ในบรรดาทุกกลุ่ม ไม่มี st. ใดๆ ในไฟล์นี้ (แยกจาก UI เหมือน engine อื่น)
 
 หลักการโมเดล (ดู proof tab สำหรับรายละเอียด):
 - Grouping: ใช้ cumulative-threshold binary t[i][g] = "แถว i อยู่กลุ่ม <= g" แทนการ enumerate
   cut point ทุกแบบ -> ทำให้ contiguity เป็น constraint เชิงเส้นล้วนๆ ไม่ต้องวนลูปนอก MILP
-- Pairing: q[i][g][p] = binary ตรงๆ ว่า "แถว i อยู่กลุ่ม g และใช้ pair p" ผูกกับ grouping
-  ด้วย equality constraint (ไม่ใช้ McCormick/continuous linearization ซึ่งช้ากว่ามากที่ทดสอบแล้ว)
-- Objective: minimize M โดย M >= โหลด UPS ทุกจุดที่เป็นไปได้ (ทุกกลุ่ม x ทุกกรณี UPS พัง x ทุก UPS ที่เหลือ)
-  บวก epsilon*sum(โหลดทั้งหมด) เป็น tie-break กันโซลูชันเบี้ยวโดยไม่จำเป็น (epsilon เล็กมากจนไม่แย่ง
-  ความสำคัญจาก M หลัก)
+- Pairing (2-source): q[i][g][p] = binary ตรงๆ ว่า "แถว i อยู่กลุ่ม g และใช้ pair p (2 ตัวจาก
+  n_ups_per_group)" ผูกกับ grouping ด้วย equality constraint
+- Quad-assignment (4-source, ยืนยันโดยผู้ใช้ 2026-09): เมื่อ n_ups_per_group > 4 แถว 4-source
+  (เสียบสายจริงแค่ 4 เส้นเสมอทางกายภาพ ไม่ว่ากลุ่มจะมี UPS กี่ตัว) ต้อง "เลือกว่าจะเสียบเข้า UPS
+  4 ตัวไหนในกลุ่ม" ด้วย — ใช้ q4[i][g][quad] แบบเดียวกับ q[i][g][p] ทุกประการ (quad = 4 ตัวอักษร
+  จาก combinations(ups_units, 4)) เมื่อ n_ups_per_group == 4 จะมี quad ให้เลือกแค่แบบเดียว
+  (ครบทั้งกลุ่มพอดี) จึงพฤติกรรมเหมือนระบบเดิมทุกประการ (backward compatible)
+- Coefficient table: ใช้สูตรเดียวกันทั้ง pair (2 ตัว) และ quad (4 ตัว) — โหลดแบ่งเท่ากันในหมู่
+  สมาชิก subset ตอนปกติ (1/len(subset)) และแบ่งเท่ากันในหมู่สมาชิกที่ยังไม่พัง ตอน fault เป็นสมาชิก
+  ของ subset นั้นเอง (1/(len(subset)-1)) — ดู _build_coeff_table()
+- Objective: minimize M โดย M >= โหลด UPS ทุกจุดที่เป็นไปได้ (ทุกกลุ่ม x ทุกกรณี UPS พัง x ทุก UPS
+  ที่เหลือ) บวก epsilon*sum(โหลดทั้งหมด) เป็น tie-break กันโซลูชันเบี้ยวโดยไม่จำเป็น
 """
+import functools
 import itertools
 import pulp
 
-from constants import UPS_UNITS
+from constants import get_group_ups_units
 
-PAIRS = ["AB", "AC", "AD", "BC", "BD", "CD"]
 EPS_TIE_BREAK = 1e-5
 DEFAULT_TIME_LIMIT = 120
 DEFAULT_GAP_REL = 0.01
 BOTTLENECK_TOL = 1e-6
+DEFAULT_N_UPS_PER_GROUP = 4
+MAX_BRUTE_FORCE_COMBOS = 2_000_000  # เพดานรวม (pairs^k2 * quads^k4) ก่อนข้ามการ cross-check
 
 
-def _build_coeff_table() -> dict:
-    """coeff[pair][faulted][unit] = สัดส่วนของ kw แถวที่ไป UPS `unit` เมื่อ `faulted` พัง
-    ถ้าแถวนั้น pairing = pair (เฉพาะ 2-source) ค่าที่เป็นไปได้คือ 0, 0.5, 1.0"""
+def _subsets_of_size(ups_units: list, size: int) -> list:
+    return ["".join(c) for c in itertools.combinations(ups_units, size)]
+
+
+def get_pairs(ups_units: list) -> list:
+    """2 ตัวจาก n_ups_per_group ตัว — ใช้กำหนดว่าแถว 2-source เสียบ UPS คู่ไหน"""
+    return _subsets_of_size(ups_units, 2)
+
+
+def get_quads(ups_units: list) -> list:
+    """4 ตัวจาก n_ups_per_group ตัว — ใช้กำหนดว่าแถว 4-source เสียบ UPS 4 ตัวไหน
+    (เสียบสายจริงแค่ 4 เส้นเสมอทางกายภาพไม่ว่ากลุ่มจะมี UPS ทั้งหมดกี่ตัว)
+    ถ้า n_ups_per_group == 4 จะมี quad ให้เลือกแค่แบบเดียว (ครบทั้งกลุ่มพอดี)"""
+    return _subsets_of_size(ups_units, 4)
+
+
+def _build_coeff_table(subsets: list, ups_units: list) -> dict:
+    """coeff[subset][faulted][unit] = สัดส่วนของ kw แถวที่ไป UPS `unit` เมื่อ `faulted` พัง
+    ถ้าแถวนั้นเสียบเข้ากับสมาชิกใน subset พอดี — สูตรเดียวใช้ได้ทั้ง pair (size=2, 2-source)
+    และ quad (size=4, 4-source): แบ่งเท่ากันในหมู่สมาชิก subset ตอนปกติ (1/len(subset)) และ
+    แบ่งเท่ากันในหมู่สมาชิกที่ยังไม่พังตอน fault เป็นสมาชิกของ subset นั้นเอง (1/(len(subset)-1))
+    ถ้า fault ไม่ใช่สมาชิกของ subset แถวนี้ไม่ถูกกระทบเลย (ยังคงแบ่งแบบปกติ)"""
     coeff = {}
-    for p in PAIRS:
-        a, b = p[0], p[1]
-        coeff[p] = {}
-        for f in UPS_UNITS:
-            coeff[p][f] = {}
-            for u in UPS_UNITS:
-                if u == f:
-                    c = 0.0
-                elif f in (a, b):
-                    partner = b if f == a else a
-                    c = 1.0 if u == partner else 0.0
-                elif u in (a, b):
-                    c = 0.5
+    for s in subsets:
+        members = list(s)
+        n_members = len(members)
+        coeff[s] = {}
+        for f in ups_units:
+            in_subset = f in members
+            survivors = [m for m in members if m != f]
+            share = (1.0 / len(survivors)) if in_subset else (1.0 / n_members if n_members else 0.0)
+            row_coeff = {}
+            for u in ups_units:
+                if u == f or u not in members:
+                    row_coeff[u] = 0.0
                 else:
-                    c = 0.0
-                coeff[p][f][u] = c
+                    row_coeff[u] = share
+            coeff[s][f] = row_coeff
     return coeff
 
 
-COEFF = _build_coeff_table()
+@functools.lru_cache(maxsize=None)
+def _get_coeff_table(ups_units_tuple: tuple) -> dict:
+    ups_units = list(ups_units_tuple)
+    subsets = get_pairs(ups_units) + get_quads(ups_units)
+    return _build_coeff_table(subsets, ups_units)
 
 
-def evaluate_group_max_fail(grp: list[dict]) -> float:
+def evaluate_group_max_fail(grp: list[dict], ups_units: list) -> float:
     """คำนวณ max-fail-load ของกลุ่มเดียวจาก coeff table ล้วนๆ (ไม่พึ่ง MILP)
-    ใช้เป็น evaluator อิสระสำหรับตรวจผลลัพธ์ MILP และสำหรับ brute-force cross-check"""
+    ใช้เป็น evaluator อิสระสำหรับตรวจผลลัพธ์ MILP และสำหรับ brute-force cross-check
+    ทุกแถว (ทั้ง 2-source และ 4-source) ต้องมี row['pair'] เป็น subset string ที่ตรงกับ
+    source_type ของแถวนั้นแล้ว (2 ตัวอักษรสำหรับ 2-source, 4 ตัวอักษรสำหรับ 4-source)"""
+    coeff = _get_coeff_table(tuple(ups_units))
     mx = 0.0
-    for f in UPS_UNITS:
-        for u in UPS_UNITS:
+    for f in ups_units:
+        for u in ups_units:
             if u == f:
                 continue
-            total = 0.0
-            for row in grp:
-                if row["source_type"] == "4-source":
-                    total += row["kw"] / 3
-                else:
-                    total += row["kw"] * COEFF[row["pair"]][f][u]
+            total = sum(row["kw"] * coeff[row["pair"]][f][u] for row in grp)
             mx = max(mx, total)
     return mx
 
@@ -95,30 +124,102 @@ def _parse_cbc_log(log_text: str) -> dict:
     }
 
 
+def _add_subset_assignment_vars(prob, idx_list, subsets, y_expr, n_groups, var_prefix):
+    """สร้าง binary var[i][g][subset] + equality constraint sum_subset var == y_expr(i,g)
+    ใช้ร่วมกันทั้ง q[i][g][p] (2-source, subsets=pairs) และ q4[i][g][quad] (4-source, subsets=quads)"""
+    var = {}
+    for i in idx_list:
+        for g in range(1, n_groups + 1):
+            for s in subsets:
+                var[i, g, s] = pulp.LpVariable(f"{var_prefix}_{i}_{g}_{s}", cat="Binary")
+            prob += pulp.lpSum(var[i, g, s] for s in subsets) == y_expr(i, g)
+    return var
+
+
+def _build_objective(prob, n_groups, ups_units, two_idx, four_idx, row_units, q, q4, pairs, quads, y_expr):
+    """สร้าง M >= โหลดทุกจุดที่เป็นไปได้ (ทุกกลุ่ม x ทุกกรณี UPS พัง x ทุก UPS ที่เหลือ)
+    ใช้ร่วมกันทั้ง solve_pairing_milp / solve_pairing_milp_free"""
+    coeff = _get_coeff_table(tuple(ups_units))
+    M = pulp.LpVariable("M", lowBound=0)
+    all_load_terms = []
+    for g in range(1, n_groups + 1):
+        for f in ups_units:
+            for u in ups_units:
+                if u == f:
+                    continue
+                terms = []
+                for i in two_idx:
+                    for p in pairs:
+                        c = coeff[p][f][u]
+                        if c != 0.0:
+                            terms.append(c * row_units[i]["kw"] * q[i, g, p])
+                for i in four_idx:
+                    for qd in quads:
+                        c = coeff[qd][f][u]
+                        if c != 0.0:
+                            terms.append(c * row_units[i]["kw"] * q4[i, g, qd])
+                expr = pulp.lpSum(terms)
+                prob += M >= expr
+                all_load_terms.append(expr)
+    prob += M + EPS_TIE_BREAK * pulp.lpSum(all_load_terms)
+    return M
+
+
+def _extract_solution(row_units, n, n_groups, y_expr, q, q4, pairs, quads, two_idx_set):
+    groups_out = [[] for _ in range(n_groups)]
+    for i in range(n):
+        for g in range(1, n_groups + 1):
+            val = y_expr(i, g)
+            v = pulp.value(val) if not isinstance(val, int) else val
+            if v is not None and v > 0.5:
+                row = dict(row_units[i])
+                if i in two_idx_set:
+                    for p in pairs:
+                        if pulp.value(q[i, g, p]) > 0.5:
+                            row["pair"] = p
+                            break
+                else:
+                    for qd in quads:
+                        if pulp.value(q4[i, g, qd]) > 0.5:
+                            row["pair"] = qd
+                            break
+                groups_out[g - 1].append(row)
+                break
+    return groups_out
+
+
 def solve_pairing_milp(
     row_units: list[dict],
     n_groups: int,
+    n_ups_per_group: int = DEFAULT_N_UPS_PER_GROUP,
     time_limit: int = DEFAULT_TIME_LIMIT,
     gap_rel: float = DEFAULT_GAP_REL,
 ) -> dict:
     """
-    MILP เดียว รวม grouping (contiguous cut) + pairing (2-source) เพื่อ minimize
-    max-fail-load ในบรรดาทุกกลุ่ม (ทุกกลุ่มใช้ UPS ขนาดเท่ากัน -> bottleneck ของกลุ่มที่แย่สุด
-    เป็นตัวกำหนด sizing)
+    MILP เดียว รวม grouping (contiguous cut) + pairing (2-source) + quad-assignment (4-source)
+    เพื่อ minimize max-fail-load ในบรรดาทุกกลุ่ม (ทุกกลุ่มใช้ UPS ขนาดเท่ากันและจำนวนเท่ากัน
+    n_ups_per_group -> bottleneck ของกลุ่มที่แย่สุดเป็นตัวกำหนด sizing)
 
     Returns dict:
-        groups: list[list[dict]]  โครงสร้างเดียวกับที่ assign_pairing() เคยคืน (มี 'pair' ต่อแถว)
+        groups: list[list[dict]]  แต่ละแถวมี 'pair' (2 ตัวอักษรถ้า 2-source, 4 ตัวอักษรถ้า 4-source)
         status: str               "Optimal" (proven) / "Time-limited (gap X%)" / อื่นๆ
         objective: float          max-fail-load ที่ได้ (M*)
         gap: float | None         relative gap ที่ CBC รายงาน ณ จุดหยุด (0 ถ้า proven optimal)
         solver_lower_bound: float | None   LP/B&B lower bound จริงจาก CBC (แน่นกว่า theoretical)
-        theoretical_lower_bound: float     max(group total kw)/3 ของกลุ่มที่ได้ (ฟังก์ชัน sanity)
-        global_theoretical_lower_bound: float  (total kw ทั้งหมด / n_groups) / 3 — floor ที่เป็นไปได้ในทางทฤษฎี
-                                                ไม่ขึ้นกับคำตอบที่ solve ได้จริง
+        theoretical_lower_bound: float     max(group total kw)/(n_ups_per_group-1) ของกลุ่มที่ได้ (ฟังก์ชัน sanity —
+                                                หาร n_ups_per_group-1 เพราะเหลือผู้รอด n_ups_per_group-1 ตัวตอน fault)
+        global_theoretical_lower_bound: float  (total kw ทั้งหมด / n_groups) / (n_ups_per_group-1) — floor ที่เป็นไปได้
+                                                ในทางทฤษฎี ไม่ขึ้นกับคำตอบที่ solve ได้จริง
+        n_ups_per_group: int      จำนวน UPS ต่อกลุ่มที่ใช้ solve ครั้งนี้
     """
+    ups_units = get_group_ups_units(n_ups_per_group)
+    pairs = get_pairs(ups_units)
+    quads = get_quads(ups_units)
+
     n = len(row_units)
     two_idx = [i for i, r in enumerate(row_units) if r["source_type"] != "4-source"]
     four_idx = [i for i, r in enumerate(row_units) if r["source_type"] == "4-source"]
+    two_idx_set = set(two_idx)
 
     prob = pulp.LpProblem("hac_grouping_pairing", pulp.LpMinimize)
 
@@ -140,35 +241,11 @@ def solve_pairing_milp(
         hi = t[i, g] if g <= n_groups - 1 else 1
         return hi - lo
 
-    # ── pairing: q[i][g][p] binary ตรงๆ ผูกกับ grouping ผ่าน equality (ไม่ bilinear) ──
-    q = {}
-    for i in two_idx:
-        for g in range(1, n_groups + 1):
-            for p in PAIRS:
-                q[i, g, p] = pulp.LpVariable(f"q_{i}_{g}_{p}", cat="Binary")
-            prob += pulp.lpSum(q[i, g, p] for p in PAIRS) == y_expr(i, g)
+    # ── pairing (2-source) + quad-assignment (4-source) ผูกกับ grouping ผ่าน equality ──
+    q = _add_subset_assignment_vars(prob, two_idx, pairs, y_expr, n_groups, "q")
+    q4 = _add_subset_assignment_vars(prob, four_idx, quads, y_expr, n_groups, "q4")
 
-    # ── objective: M >= โหลดทุกจุดที่เป็นไปได้ ──
-    M = pulp.LpVariable("M", lowBound=0)
-    all_load_terms = []
-    for g in range(1, n_groups + 1):
-        for f in UPS_UNITS:
-            for u in UPS_UNITS:
-                if u == f:
-                    continue
-                terms = []
-                for i in two_idx:
-                    for p in PAIRS:
-                        c = COEFF[p][f][u]
-                        if c != 0.0:
-                            terms.append(c * row_units[i]["kw"] * q[i, g, p])
-                for i in four_idx:
-                    terms.append((row_units[i]["kw"] / 3) * y_expr(i, g))
-                expr = pulp.lpSum(terms)
-                prob += M >= expr
-                all_load_terms.append(expr)
-
-    prob += M + EPS_TIE_BREAK * pulp.lpSum(all_load_terms)
+    M = _build_objective(prob, n_groups, ups_units, two_idx, four_idx, row_units, q, q4, pairs, quads, y_expr)
 
     import tempfile, os
     log_fd, log_path = tempfile.mkstemp(suffix=".log")
@@ -197,29 +274,14 @@ def solve_pairing_milp(
     else:
         status_label = pulp.LpStatus[prob.status]
 
-    # ── extract solution ──
-    groups_out = [[] for _ in range(n_groups)]
-    for i in range(n):
-        for g in range(1, n_groups + 1):
-            val = y_expr(i, g)
-            v = pulp.value(val) if not isinstance(val, int) else val
-            if v is not None and v > 0.5:
-                row = dict(row_units[i])
-                if row["source_type"] == "4-source":
-                    row["pair"] = "ABCD"
-                else:
-                    for p in PAIRS:
-                        if pulp.value(q[i, g, p]) > 0.5:
-                            row["pair"] = p
-                            break
-                groups_out[g - 1].append(row)
-                break
+    groups_out = _extract_solution(row_units, n, n_groups, y_expr, q, q4, pairs, quads, two_idx_set)
 
     objective_value = pulp.value(M)
 
-    theoretical_lb = max(sum(r["kw"] for r in grp) / 3 for grp in groups_out) if groups_out else 0.0
+    n_survivors = n_ups_per_group - 1
+    theoretical_lb = max(sum(r["kw"] for r in grp) / n_survivors for grp in groups_out) if groups_out else 0.0
     total_kw_all = sum(r["kw"] for r in row_units)
-    global_theoretical_lb = (total_kw_all / n_groups) / 3
+    global_theoretical_lb = (total_kw_all / n_groups) / n_survivors
 
     solver_lower_bound = solver_info["solver_lower_bound"]
     if solver_lower_bound is None and solver_info["proven_optimal"]:
@@ -236,12 +298,14 @@ def solve_pairing_milp(
         "global_theoretical_lower_bound": global_theoretical_lb,
         "mode": "contiguous",
         "time_limit": time_limit,
+        "n_ups_per_group": n_ups_per_group,
     }
 
 
 def solve_pairing_milp_free(
     row_units: list[dict],
     n_groups: int,
+    n_ups_per_group: int = DEFAULT_N_UPS_PER_GROUP,
     time_limit: int = DEFAULT_TIME_LIMIT,
     gap_rel: float = DEFAULT_GAP_REL,
     warm_start_groups: list[list[dict]] | None = None,
@@ -258,9 +322,14 @@ def solve_pairing_milp_free(
       - warm-start: ถ้ามี warm_start_groups (เช่นจาก contiguous solution) ให้ set เป็นค่าเริ่มต้น
         ของ x[i][g] ให้ CBC มี incumbent ตั้งแต่แรก
     """
+    ups_units = get_group_ups_units(n_ups_per_group)
+    pairs = get_pairs(ups_units)
+    quads = get_quads(ups_units)
+
     n = len(row_units)
     two_idx = [i for i, r in enumerate(row_units) if r["source_type"] != "4-source"]
     four_idx = [i for i, r in enumerate(row_units) if r["source_type"] == "4-source"]
+    two_idx_set = set(two_idx)
 
     prob = pulp.LpProblem("hac_grouping_pairing_free", pulp.LpMinimize)
 
@@ -281,35 +350,11 @@ def solve_pairing_milp_free(
             >= pulp.lpSum(row_units[i]["kw"] * x[i, g + 1] for i in range(n))
         )
 
-    # ── pairing: q[i][g][p] binary ตรงๆ ผูกกับ grouping ผ่าน equality (ไม่ bilinear) ──
-    q = {}
-    for i in two_idx:
-        for g in range(1, n_groups + 1):
-            for p in PAIRS:
-                q[i, g, p] = pulp.LpVariable(f"q_{i}_{g}_{p}", cat="Binary")
-            prob += pulp.lpSum(q[i, g, p] for p in PAIRS) == y_expr(i, g)
+    # ── pairing (2-source) + quad-assignment (4-source) ผูกกับ grouping ผ่าน equality ──
+    q = _add_subset_assignment_vars(prob, two_idx, pairs, y_expr, n_groups, "q")
+    q4 = _add_subset_assignment_vars(prob, four_idx, quads, y_expr, n_groups, "q4")
 
-    # ── objective: M >= โหลดทุกจุดที่เป็นไปได้ ──
-    M = pulp.LpVariable("M", lowBound=0)
-    all_load_terms = []
-    for g in range(1, n_groups + 1):
-        for f in UPS_UNITS:
-            for u in UPS_UNITS:
-                if u == f:
-                    continue
-                terms = []
-                for i in two_idx:
-                    for p in PAIRS:
-                        c = COEFF[p][f][u]
-                        if c != 0.0:
-                            terms.append(c * row_units[i]["kw"] * q[i, g, p])
-                for i in four_idx:
-                    terms.append((row_units[i]["kw"] / 3) * y_expr(i, g))
-                expr = pulp.lpSum(terms)
-                prob += M >= expr
-                all_load_terms.append(expr)
-
-    prob += M + EPS_TIE_BREAK * pulp.lpSum(all_load_terms)
+    M = _build_objective(prob, n_groups, ups_units, two_idx, four_idx, row_units, q, q4, pairs, quads, y_expr)
 
     # ── warm start: ตรึงค่าเริ่มต้นของ x[i][g] จาก grouping ที่ให้มา (เช่น contiguous solution) ──
     # สำคัญ: ต้อง relabel กลุ่มตาม total_kw มาก->น้อยก่อน ไม่งั้นจะขัดกับ weight-ordering
@@ -374,29 +419,14 @@ def solve_pairing_milp_free(
     else:
         status_label = pulp.LpStatus[prob.status]
 
-    # ── extract solution ──
-    groups_out = [[] for _ in range(n_groups)]
-    for i in range(n):
-        for g in range(1, n_groups + 1):
-            val = y_expr(i, g)
-            v = pulp.value(val) if not isinstance(val, int) else val
-            if v is not None and v > 0.5:
-                row = dict(row_units[i])
-                if row["source_type"] == "4-source":
-                    row["pair"] = "ABCD"
-                else:
-                    for p in PAIRS:
-                        if pulp.value(q[i, g, p]) > 0.5:
-                            row["pair"] = p
-                            break
-                groups_out[g - 1].append(row)
-                break
+    groups_out = _extract_solution(row_units, n, n_groups, y_expr, q, q4, pairs, quads, two_idx_set)
 
     objective_value = pulp.value(M)
 
-    theoretical_lb = max(sum(r["kw"] for r in grp) / 3 for grp in groups_out) if groups_out else 0.0
+    n_survivors = n_ups_per_group - 1
+    theoretical_lb = max(sum(r["kw"] for r in grp) / n_survivors for grp in groups_out) if groups_out else 0.0
     total_kw_all = sum(r["kw"] for r in row_units)
-    global_theoretical_lb = (total_kw_all / n_groups) / 3
+    global_theoretical_lb = (total_kw_all / n_groups) / n_survivors
 
     solver_lower_bound = solver_info["solver_lower_bound"]
     if solver_lower_bound is None and solver_info["proven_optimal"]:
@@ -412,47 +442,58 @@ def solve_pairing_milp_free(
         "global_theoretical_lower_bound": global_theoretical_lb,
         "mode": "free",
         "time_limit": time_limit,
+        "n_ups_per_group": n_ups_per_group,
     }
 
 
-def brute_force_pairing_check(grp: list[dict], max_two_source: int = 8) -> dict | None:
+def brute_force_pairing_check(grp: list[dict], ups_units: list, max_combos: int = MAX_BRUTE_FORCE_COMBOS) -> dict | None:
     """
-    Cross-check: ตรึง grouping ตามที่ MILP หาได้ แล้ววน brute force (6^k) หา pairing
-    ที่ optimal จริงสำหรับกลุ่มนี้ (k = จำนวนแถว 2-source ในกลุ่ม) เพื่อยืนยันว่า MILP
-    ไม่ได้ทำพลาด (เฉพาะกลุ่มที่ k <= max_two_source เพราะ 6^k โตเร็วมาก)
-    Returns None ถ้ากลุ่มมี 2-source เกิน max_two_source (ข้ามการเช็ค)
+    Cross-check: ตรึง grouping ตามที่ MILP หาได้ แล้ววน brute force หา pairing (2-source) +
+    quad-assignment (4-source) ที่ optimal จริงสำหรับกลุ่มนี้ เพื่อยืนยันว่า MILP ไม่ได้ทำพลาด
+    (เฉพาะกลุ่มที่ combos รวม <= max_combos เพราะโตเร็วมากถ้ามีทั้ง 2-source และ 4-source เยอะ)
+    Returns None ถ้ากลุ่มมี combos รวมเกิน max_combos (ข้ามการเช็ค)
     """
     two_rows = [r for r in grp if r["source_type"] != "4-source"]
     four_rows = [r for r in grp if r["source_type"] == "4-source"]
-    k = len(two_rows)
-    if k > max_two_source:
+    k2 = len(two_rows)
+    k4 = len(four_rows)
+    pairs = get_pairs(ups_units)
+    quads = get_quads(ups_units)
+
+    combos_two = len(pairs) ** k2
+    combos_four = (len(quads) ** k4) if k4 else 1
+    total_combos = combos_two * combos_four
+    if total_combos > max_combos:
         return None
 
     best_max = float("inf")
-    best_pairs = None
-    if k == 0:
-        best_max = evaluate_group_max_fail(four_rows)
-        best_pairs = ()
-    else:
-        for combo in itertools.product(PAIRS, repeat=k):
-            candidate = [dict(r, pair=combo[j]) for j, r in enumerate(two_rows)] + four_rows
-            val = evaluate_group_max_fail(candidate)
+    best_assignment = None
+    two_choices = list(itertools.product(pairs, repeat=k2)) if k2 else [()]
+    four_choices = list(itertools.product(quads, repeat=k4)) if k4 else [()]
+    for two_combo in two_choices:
+        for four_combo in four_choices:
+            candidate = (
+                [dict(r, pair=two_combo[j]) for j, r in enumerate(two_rows)]
+                + [dict(r, pair=four_combo[j]) for j, r in enumerate(four_rows)]
+            )
+            val = evaluate_group_max_fail(candidate, ups_units)
             if val < best_max:
                 best_max = val
-                best_pairs = combo
+                best_assignment = (two_combo, four_combo)
 
-    milp_max = evaluate_group_max_fail(grp)
+    milp_max = evaluate_group_max_fail(grp, ups_units)
     return {
         "brute_force_best": best_max,
         "milp_result": milp_max,
         "matches": abs(best_max - milp_max) < 1e-6,
-        "best_pairing": best_pairs,
-        "n_two_source": k,
-        "combinations_tried": len(PAIRS) ** k,
+        "best_pairing": best_assignment,
+        "n_two_source": k2,
+        "n_four_source": k4,
+        "combinations_tried": total_combos,
     }
 
 
-def build_proof_context(milp_result: dict, max_two_source: int = 8) -> dict:
+def build_proof_context(milp_result: dict, max_combos: int = MAX_BRUTE_FORCE_COMBOS) -> dict:
     """
     รวมทุกอย่างที่ต้องใช้ "แสดงผล" หรือ "สร้างเอกสาร proof" จาก milp_result เดียว —
     single source of truth ให้ ui/tab_proof.py (แสดงใน UI) และ engine/report_docx.py
@@ -461,23 +502,28 @@ def build_proof_context(milp_result: dict, max_two_source: int = 8) -> dict:
     """
     groups = milp_result["groups"]
     overall_max = milp_result["objective"]
+    n_ups_per_group = milp_result.get("n_ups_per_group", DEFAULT_N_UPS_PER_GROUP)
+    ups_units = get_group_ups_units(n_ups_per_group)
     group_checks = []
     for gi, grp in enumerate(groups, 1):
-        group_max = evaluate_group_max_fail(grp)
+        group_max = evaluate_group_max_fail(grp, ups_units)
         is_bottleneck = abs(group_max - overall_max) < BOTTLENECK_TOL
         n_two = sum(1 for r in grp if r["source_type"] != "4-source")
-        chk = brute_force_pairing_check(grp, max_two_source=max_two_source)
+        n_four = sum(1 for r in grp if r["source_type"] == "4-source")
+        chk = brute_force_pairing_check(grp, ups_units, max_combos=max_combos)
         group_checks.append({
             "index": gi,
             "group": grp,
             "n_two_source": n_two,
+            "n_four_source": n_four,
             "group_max": group_max,
             "is_bottleneck": is_bottleneck,
-            "brute_force": chk,  # None ถ้าข้าม (2-source > max_two_source)
+            "brute_force": chk,  # None ถ้าข้าม (combos รวม > max_combos)
         })
     return {
         "milp_result": milp_result,
         "overall_max": overall_max,
         "group_checks": group_checks,
-        "max_two_source": max_two_source,
+        "max_combos": max_combos,
+        "n_ups_per_group": n_ups_per_group,
     }

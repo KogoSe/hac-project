@@ -105,15 +105,17 @@ def render():
         f"{milp_result['solver_lower_bound']:,.1f} kW" if milp_result.get("solver_lower_bound") is not None else "—",
         help="Lower bound จริงจาก LP relaxation + cuts ของ CBC — แน่นกว่า theoretical bound",
     )
+    n_ups_per_group = milp_result.get("n_ups_per_group", 4)
+    n_survivors = n_ups_per_group - 1
     lb2.metric(
         "Theoretical LB (กลุ่มที่ได้)",
         f"{milp_result['theoretical_lower_bound']:,.1f} kW",
-        help="max(group total kW)/3 ของกลุ่มที่ solve ได้จริง — ถ้าแบ่งโหลด 3 UPS ที่เหลือได้เท่ากันเป๊ะ",
+        help=f"max(group total kW)/{n_survivors} ของกลุ่มที่ solve ได้จริง — ถ้าแบ่งโหลด {n_survivors} UPS ที่เหลือได้เท่ากันเป๊ะ",
     )
     lb3.metric(
         "Global Theoretical LB",
         f"{milp_result['global_theoretical_lower_bound']:,.1f} kW",
-        help="(total kW ทั้งหมด / จำนวนกลุ่ม) / 3 — floor ทางทฤษฎีที่เป็นไปได้ ไม่ขึ้นกับวิธีแบ่งกลุ่มจริง",
+        help=f"(total kW ทั้งหมด / จำนวนกลุ่ม) / {n_survivors} — floor ทางทฤษฎีที่เป็นไปได้ ไม่ขึ้นกับวิธีแบ่งกลุ่มจริง",
     )
     st.caption(
         "M* ต้อง >= ทุก lower bound ข้างบนเสมอ ถ้า M* ใกล้ Solver Lower Bound มาก แปลว่าคำตอบดีมากแล้ว"
@@ -121,9 +123,11 @@ def render():
 
     # ── SECTION 3: BRUTE-FORCE CROSS-CHECK ────────────────────────
     st.header("3 — Brute-Force Cross-Check ต่อกลุ่ม")
+    max_combos = proof_context.get("max_combos")
     st.caption(
-        "ตรึง grouping ตามที่ MILP หาได้ แล้ววนหา pairing ที่ดีที่สุดจริงทุกความเป็นไปได้ (6^k) "
-        "เฉพาะกลุ่มที่มีแถว 2-source <= 8 แถว (k ใหญ่กว่านี้ 6^k จะช้าเกินไป) "
+        "ตรึง grouping ตามที่ MILP หาได้ แล้ววนหา pairing (2-source) + quad-assignment (4-source) "
+        "ที่ดีที่สุดจริงทุกความเป็นไปได้ เฉพาะกลุ่มที่จำนวน combos รวม "
+        f"({'pairs^k2 × quads^k4' if max_combos else ''}) ไม่เกิน {max_combos:,} (มากกว่านี้จะช้าเกินไป) "
         "กลุ่มที่เป็น **คอขวด** (max-fail-load ของกลุ่ม = M* ของทั้งระบบ) ต้อง match กับ MILP เป๊ะ "
         "ส่วนกลุ่มอื่นไม่จำเป็นต้อง optimal เป็นรายกลุ่ม (แค่ไม่เกิน M* ก็พอแล้ว)"
     )
@@ -132,7 +136,11 @@ def render():
     check_rows = []
     for gc in proof_context["group_checks"]:
         gi, grp = gc["index"], gc["group"]
-        group_max, is_bottleneck, n_two, chk = gc["group_max"], gc["is_bottleneck"], gc["n_two_source"], gc["brute_force"]
+        group_max   = gc["group_max"]
+        is_bottleneck = gc["is_bottleneck"]
+        n_two       = gc["n_two_source"]
+        n_four      = gc.get("n_four_source", 0)
+        chk         = gc["brute_force"]
 
         color = GROUP_BADGE_COLORS[(gi - 1) % len(GROUP_BADGE_COLORS)]
         label = f"PTU Group {gi}" + ("  🎯 คอขวด (bottleneck)" if is_bottleneck else "")
@@ -143,11 +151,11 @@ def render():
         )
 
         if chk is None:
-            st.info(f"กลุ่มนี้มี 2-source {n_two} แถว (> 8) — ข้ามการเช็ค brute-force (6^{n_two} ช้าเกินไป)")
+            st.info(f"กลุ่มนี้มี {n_two} แถว 2-source และ {n_four} แถว 4-source — combos รวมเกิน {max_combos:,} ข้ามการเช็ค brute-force")
             check_rows.append({
                 "กลุ่ม": f"G{gi}", "คอขวด": "✅" if is_bottleneck else "—",
-                "2-source rows": n_two, "MILP max-fail": f"{group_max:,.1f}",
-                "Brute-force best": "ข้าม (>8 แถว)", "ยืนยันหรือไม่": "—",
+                "2-source rows": n_two, "4-source rows": n_four, "MILP max-fail": f"{group_max:,.1f}",
+                "Brute-force best": "ข้าม (combos เกิน)", "ยืนยันหรือไม่": "—",
             })
             continue
 
@@ -171,7 +179,7 @@ def render():
 
         check_rows.append({
             "กลุ่ม": f"G{gi}", "คอขวด": "🎯" if is_bottleneck else "—",
-            "2-source rows": n_two, "MILP max-fail": f"{group_max:,.1f}",
+            "2-source rows": n_two, "4-source rows": n_four, "MILP max-fail": f"{group_max:,.1f}",
             "Brute-force best": f"{chk['brute_force_best']:,.1f}",
             "ยืนยันหรือไม่": "✅ ตรงกัน" if (not is_bottleneck or chk["matches"]) else "❌ ไม่ตรง",
         })

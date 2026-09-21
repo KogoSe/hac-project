@@ -106,47 +106,42 @@ def assign_pairing(groups: list[list]) -> list[list]:
     return result
 
 
-def compute_normal_loads(grp: list[dict]) -> dict:
+def compute_normal_loads(grp: list[dict], ups_units: list = None) -> dict:
     """
-    Normal operation โหลดบน UPS แต่ละตัว:
-    - 2-source: 50/50 ไปหา 2 UPS ที่ Pair กัน
-    - 4-source: 25% ไปหาทุก UPS (A/B/C/D)
+    Normal operation โหลดบน UPS แต่ละตัว — ใช้ row['pair'] ตรงๆ ไม่ว่าจะยาว 2 ตัวอักษร (2-source,
+    แบ่ง 50/50) หรือ 4 ตัวอักษร (4-source, แบ่ง 25% เท่ากัน — เสียบสายจริงแค่ 4 เส้นเสมอทางกายภาพ
+    ไม่ว่ากลุ่มจะมี UPS ทั้งหมดกี่ตัว ซึ่งตัวไหนคือ 4 ตัวที่เสียบถูกกำหนดไว้แล้วใน row['pair'])
+    ups_units: รายชื่อ UPS ทั้งหมดของกลุ่ม (default = 4 ตัวเดิม A,B,C,D เพื่อ backward compat)
     """
-    totals = {u: 0.0 for u in UPS_UNITS}
+    if ups_units is None:
+        ups_units = UPS_UNITS
+    totals = {u: 0.0 for u in ups_units}
     for row in grp:
-        if row["source_type"] == "4-source":
-            share = row["kw"] / 4
-            for u in UPS_UNITS:
-                totals[u] += share
-        else:
-            half = row["kw"] / 2
-            totals[row["pair"][0]] += half
-            totals[row["pair"][1]] += half
+        members = row["pair"]
+        share = row["kw"] / len(members)
+        for u in members:
+            totals[u] += share
     return totals
 
 
-def compute_fault_loads(grp: list[dict], faulted: str) -> dict:
+def compute_fault_loads(grp: list[dict], faulted: str, ups_units: list = None) -> dict:
     """
-    Fault scenario: UPS 'faulted' พัง
-    2-source:
-      - แถวที่ faulted อยู่ใน Pairing → Partner รับ 100%
-      - แถวที่ไม่เกี่ยว → ยังแบ่ง 50/50 ตามปกติ
-    4-source:
-      - faulted หายไป → 3 ตัวที่เหลือรับ 33.33% แต่ละตัว (รวม = 100%)
+    Fault scenario: UPS 'faulted' พัง — ใช้ row['pair'] ตรงๆ เหมือน compute_normal_loads:
+    ถ้า faulted เป็นสมาชิกของ row['pair'] สมาชิกที่เหลือ (survivors) แบ่งโหลดแถวนั้นเท่าๆกัน
+    ถ้าไม่เกี่ยว แถวนั้นยังแบ่งโหลดปกติในหมู่สมาชิกของมันเหมือนเดิม ไม่ถูกกระทบ
     """
-    loads = {u: 0.0 for u in UPS_UNITS if u != faulted}
+    if ups_units is None:
+        ups_units = UPS_UNITS
+    loads = {u: 0.0 for u in ups_units if u != faulted}
     for row in grp:
-        if row["source_type"] == "4-source":
-            share = row["kw"] / 3  # 3 ตัวที่รอดแบ่งเท่ากัน
-            for u in loads:
+        members = row["pair"]
+        if faulted in members:
+            survivors = [u for u in members if u != faulted]
+            share = row["kw"] / len(survivors)
+            for u in survivors:
                 loads[u] += share
         else:
-            u1, u2 = row["pair"][0], row["pair"][1]
-            if faulted in (u1, u2):
-                partner = u2 if faulted == u1 else u1
-                loads[partner] += row["kw"]
-            else:
-                half = row["kw"] / 2
-                loads[u1] += half
-                loads[u2] += half
+            share = row["kw"] / len(members)
+            for u in members:
+                loads[u] += share
     return loads
