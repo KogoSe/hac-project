@@ -103,6 +103,53 @@ def select_equipment(chain: dict, cfg: dict) -> dict:
     }
 
 
+def suggest_group_configs(
+    total_kw: float,
+    cfg: dict,
+    n_groups_range: range = range(1, 7),
+    n_ups_options: tuple = (4, 5, 6),
+) -> list[dict]:
+    """
+    ประมาณ config (n_groups, n_ups_per_group) ที่น่าลอง แบบเร็ว — เลขคณิตล้วนๆ ไม่ solve MILP เลย
+    สมมติแบ่งโหลดรวมเท่าๆกันทุกกลุ่ม (ประมาณคร่าวๆ เท่านั้น — ของจริง MILP จะแบ่งไม่เท่ากันเป๊ะขึ้นกับ
+    ขนาดแถวจริง ต้อง solve MILP จริงอีกทีกับ 2-3 config ที่เลือกจากตรงนี้เพื่อความแม่นยำ)
+
+    ใช้ compute_load_chain() + select_equipment() ตัวเดียวกับที่ Equipment Sizing tab ใช้จริง เพื่อให้
+    utilization % ที่โชว์ตรงกับที่จะเจอจริงถ้าใช้ config นี้ (ไม่ได้ประดิษฐ์สูตรแยกต่างหาก)
+
+    normal/fault estimate ต่อ UPS หนึ่งตัว:
+      - normal_est = (total_kw / n_groups) / n_ups_per_group        (โหลดปกติเฉลี่ยต่อ UPS)
+      - fault_est  = (total_kw / n_groups) / (n_ups_per_group - 1)  (โหลดตอน UPS ตัวนึงพัง ที่เหลือรับแทน)
+
+    Returns: list ของ dict {n_groups, n_ups_per_group, normal_est_kw, fault_est_kw, equip, feasible,
+    avg_util} เรียงจาก "น่าลองที่สุด" ไปหา "น่าลองน้อยที่สุด" — feasible ก่อน (ทุกอุปกรณ์มี size รองรับ),
+    แล้วเรียง avg utilization สูงไปต่ำ (ใกล้ threshold ที่สุด = ไม่เผื่อทิ้งขว้างเกินจำเป็น), เท่ากันแล้ว
+    เลือกจำนวนกลุ่มน้อยกว่าก่อน (ซื้อ Generator/Transformer/RMU set น้อยชุดกว่า)
+    """
+    results = []
+    for n_groups in n_groups_range:
+        avg_group_kw = total_kw / n_groups
+        for n_ups in n_ups_options:
+            normal_est = avg_group_kw / n_ups
+            fault_est = avg_group_kw / (n_ups - 1)
+            chain = compute_load_chain(fault_est, normal_est, cfg)
+            equip = select_equipment(chain, cfg)
+            utils = [eq["util"] for eq in equip.values() if eq["util"] is not None]
+            feasible = all(eq["size"] is not None for eq in equip.values())
+            avg_util = sum(utils) / len(utils) if utils else 0.0
+            results.append({
+                "n_groups": n_groups,
+                "n_ups_per_group": n_ups,
+                "normal_est_kw": normal_est,
+                "fault_est_kw": fault_est,
+                "equip": equip,
+                "feasible": feasible,
+                "avg_util": avg_util,
+            })
+    results.sort(key=lambda r: (not r["feasible"], -r["avg_util"], r["n_groups"]))
+    return results
+
+
 def unify_common_sizes(group_equip_list: list[dict], keys: tuple = ("ups", "gen", "trafo", "busway")) -> dict:
     """
     หาขนาดใหญ่สุดร่วมกันของแต่ละ equipment key จากทุกกลุ่ม แล้ว override

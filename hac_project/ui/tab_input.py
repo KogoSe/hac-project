@@ -9,6 +9,7 @@ import openpyxl
 from constants import SOURCE_OPTIONS, N_UPS_PER_GROUP_OPTIONS, get_group_ups_units
 from engine.optimization import DEFAULT_TIME_LIMIT
 from engine.pairing import parse_rack_layout
+from engine.sizing import suggest_group_configs
 from ui.svg_diagram import build_hac_svg
 
 EXCEL_IMPORT_PATH = "Input_datahall.xlsx"  # วางไว้ที่ hac_project/ (ระดับเดียวกับ app.py)
@@ -209,14 +210,60 @@ def render():
     c4.metric("HAC แบบ 2-source",   cnt_2src)
     c5.metric("HAC แบบ 4-source",   cnt_4src)
 
+    # ── แนะนำ Config อัตโนมัติ (คร่าวๆ ไม่ solve MILP — แค่เลขคณิตหารเท่าๆกัน+เทียบ Standard Size
+    # เดียวกับ Equipment Sizing tab) ให้เห็นว่า n_groups/n_ups_per_group แบบไหนน่าลอง ก่อนต้อง
+    # กด solve MILP จริงทีละแบบ ───────────────────────────────────────────────────
+    st.divider()
+    with st.expander("🎯 แนะนำ Config อัตโนมัติ (ประมาณคร่าวๆ ก่อน — ไม่ใช่คำตอบสุดท้าย)", expanded=False):
+        st.caption(
+            "หารโหลดรวมเท่าๆกันทุกกลุ่ม (ประมาณคร่าวๆ ของจริง MILP จะแบ่งไม่เท่ากันเป๊ะ) แล้วเทียบกับ "
+            "Standard Size List เดียวกับแท็บ Equipment Sizing เพื่อดู utilization — ใช้เลือก 2-3 config "
+            "ที่น่าสนใจมาลอง solve MILP จริงต่อ ไม่ใช่ตัดสินใจสุดท้ายจากตรงนี้"
+        )
+        if st.button("🔍 หา Config ที่แนะนำ"):
+            sizing_cfg_fallback = st.session_state.get("sizing_cfg", {
+                "ups_eff": 0.96, "ups_charging": 88.0, "tx_loss": 0.015, "hvac_total": 80.9,
+                "pf": 0.95, "voltage": 415.0, "design_margin": 1.25, "util_threshold": 0.95,
+                "ups_sizes": [500, 750, 1000, 1250, 1500, 1600, 2000, 2400, 2500],
+                "trafo_sizes": [1000, 1250, 1600, 2000, 2200, 2500, 3000],
+                "gen_sizes": [1250, 1500, 1750, 2000, 2200, 2500, 2750, 3000],
+                "busway_sizes": [800, 1600, 2000, 2500, 3200, 4000, 5000],
+            })
+            st.session_state.suggested_configs = suggest_group_configs(total_all, sizing_cfg_fallback)
+
+        suggestions = st.session_state.get("suggested_configs")
+        if suggestions:
+            if not st.session_state.get("sizing_cfg"):
+                st.info("ℹ️ ยังไม่เคยเปิดแท็บ Equipment Sizing ในเซสชันนี้ — ใช้ค่า Assumption/Standard Size เริ่มต้นไปก่อน")
+            for rank, r in enumerate(suggestions[:8], 1):
+                cols = st.columns([1, 1, 1, 1, 1, 1, 1])
+                badge = "🥇" if rank == 1 and r["feasible"] else ("❌" if not r["feasible"] else "")
+                cols[0].markdown(f"**{badge} #{rank}**")
+                cols[1].markdown(f"{r['n_groups']} กลุ่ม")
+                cols[2].markdown(f"{r['n_ups_per_group']} PTU/กลุ่ม")
+                if r["feasible"]:
+                    cols[3].markdown(f"avg util **{r['avg_util']*100:.0f}%**")
+                    eq = r["equip"]
+                    cols[4].markdown(f"UPS {eq['ups']['size']:,.0f}kW")
+                    cols[5].markdown(f"Gen {eq['gen']['size']:,.0f}kW")
+                else:
+                    cols[3].markdown("❌ ไม่มี size รองรับ")
+                if cols[6].button("ใช้ config นี้", key=f"apply_suggest_{rank}"):
+                    st.session_state["n_groups_input"] = r["n_groups"]
+                    st.session_state["n_ups_per_group_select"] = r["n_ups_per_group"]
+                    st.rerun()
+
     # Settings
     st.divider()
     st.subheader("⚙️ ตั้งค่า Optimization")
-    n_groups = st.number_input("จำนวนกลุ่ม PTU 1กลุ่ม อาจมี 4,5,6 PTU(ABCD..) (default = 3)", min_value=1, max_value=6, value=3, step=1)
+    n_groups = st.number_input(
+        "จำนวนกลุ่ม PTU 1กลุ่ม อาจมี 4,5,6 PTU(ABCD..) (default = 3)",
+        min_value=1, max_value=6, value=3, step=1, key="n_groups_input",
+    )
     st.session_state.n_groups = int(n_groups)
     n_ups_per_group = st.selectbox(
         "จำนวน PTU/UPS ต่อกลุ่ม",
-        options=N_UPS_PER_GROUP_OPTIONS, index=0,
+        options=N_UPS_PER_GROUP_OPTIONS, index=0, key="n_ups_per_group_select",
         format_func=lambda n: f"{n} PTU ({''.join(get_group_ups_units(n))})",
         help="ปกติกลุ่มนึงมี 4 PTU (A,B,C,D) — ถ้าเลือก 5/6 แถวที่เป็น 2-source จะจับคู่ (pair) ได้หลากหลาย"
              "ขึ้นตามจำนวนที่เลือก (4→6 แบบ, 5→10 แบบ, 6→15 แบบ) ส่วนแถว 4-source ยังเสียบแค่ 4 เส้นเท่าเดิม"
