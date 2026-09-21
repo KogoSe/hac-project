@@ -71,9 +71,9 @@ def render():
         with sc1:
             ups_sizes_str = st.text_input("UPS (kW)", value="500,750,1000,1250,1500,1600,2000,2400,2500")
         with sc2:
-            trafo_sizes_str = st.text_input("Transformer (kVA)", value="1000,1250,1600,2000,2500,3000,3150,4000")
+            trafo_sizes_str = st.text_input("Transformer (kVA)", value="1000,1250,1600,2000,2200,2500,3000")
         with sc3:
-            gen_sizes_str = st.text_input("Generator (kW)", value="1250,1500,1750,2000,2200,2500,2750,3000,3500")
+            gen_sizes_str = st.text_input("Generator (kW)", value="1250,1500,1750,2000,2200,2500,2750,3000")
         with sc4:
             busway_sizes_str = st.text_input("Busway (A)", value="800,1600,2000,2500,3200,4000,5000")
 
