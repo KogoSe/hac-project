@@ -236,7 +236,7 @@ def render():
             if not st.session_state.get("sizing_cfg"):
                 st.info("ℹ️ ยังไม่เคยเปิดแท็บ Equipment Sizing ในเซสชันนี้ — ใช้ค่า Assumption/Standard Size เริ่มต้นไปก่อน")
             for rank, r in enumerate(suggestions[:8], 1):
-                cols = st.columns([1, 1, 1, 1, 1, 1, 1])
+                cols = st.columns([1, 1, 1, 1, 1, 1, 1, 1])
                 badge = "🥇" if rank == 1 and r["feasible"] else ("❌" if not r["feasible"] else "")
                 cols[0].markdown(f"**{badge} #{rank}**")
                 cols[1].markdown(f"{r['n_groups']} กลุ่ม")
@@ -245,10 +245,11 @@ def render():
                     cols[3].markdown(f"avg util **{r['avg_util']*100:.0f}%**")
                     eq = r["equip"]
                     cols[4].markdown(f"UPS {eq['ups']['size']:,.0f}kW")
-                    cols[5].markdown(f"Gen {eq['gen']['size']:,.0f}kW")
+                    cols[5].markdown(f"Trafo {eq['trafo']['size']:,.0f}kVA")
+                    cols[6].markdown(f"Gen {eq['gen']['size']:,.0f}kW")
                 else:
                     cols[3].markdown("❌ ไม่มี size รองรับ")
-                if cols[6].button("ใช้ config นี้", key=f"apply_suggest_{rank}"):
+                if cols[7].button("ใช้ config นี้", key=f"apply_suggest_{rank}"):
                     st.session_state["n_groups_input"] = r["n_groups"]
                     st.session_state["n_ups_per_group_select"] = r["n_ups_per_group"]
                     st.rerun()
