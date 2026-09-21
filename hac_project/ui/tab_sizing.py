@@ -159,32 +159,58 @@ def render():
         n_chain = chain["normal"]
         f_chain = chain["fault"]
 
+        # สูตร: ใช้ชื่อตัวแปร + ค่าคงที่จริงของกลุ่มนี้ (tx_loss/eff/pf/margin ฯลฯ เหมือนกันทั้ง Normal/Fault
+        # ต่างกันแค่ตัวตั้งต้น IT Load) ให้เห็นว่าแต่ละแถวบวก/หารอะไรมาโดยไม่ต้องเดา
         chain_rows = [
-            ("1",  "Max IT Load per UPS",                    n_chain["it_kw"],         f_chain["it_kw"]),
-            ("2",  "+ Transmission Loss (×" + f"{(1+cfg['tx_loss']):.3f}" + ")",
-                                                              n_chain["connected_it"] - n_chain["it_kw"],
-                                                              f_chain["connected_it"] - f_chain["it_kw"]),
-            ("2",  "= Connected IT Load  →  🔲 เลือก UPS",  n_chain["connected_it"],  f_chain["connected_it"]),
-            ("3",  "+ UPS Loss",                             n_chain["ups_loss"],      f_chain["ups_loss"]),
-            ("3",  "+ UPS Battery Charging",                 n_chain["ups_charging"],  f_chain["ups_charging"]),
-            ("3",  "= Total UPS Output",                     n_chain["ups_total_out"], f_chain["ups_total_out"]),
-            ("4",  "+ HVAC Load in PTU",                     n_chain["hvac"],          f_chain["hvac"]),
-            ("4",  "= Total PTU Load (kW)",                  n_chain["ptu_kw"],        f_chain["ptu_kw"]),
-            ("4",  "= Total PTU Load (kVA)",
-                                                              n_chain["ptu_kva"],       f_chain["ptu_kva"]),
-            ("5",  "+ Transmission Loss (×" + f"{(1+cfg['tx_loss']):.3f}" + ")",
-                                                              n_chain["total_connected"] - n_chain["ptu_kw"],
-                                                              f_chain["total_connected"] - f_chain["ptu_kw"]),
-            ("5",  "= Total Connected Load (kW)  →  🔲 เลือก Generator",
-                                                              n_chain["total_connected"], f_chain["total_connected"]),
-            ("5",  "= Total Connected Load (kVA)  →  🔲 เลือก Transformer",
-                                                              n_chain["total_connected_kva"], f_chain["total_connected_kva"]),
-            ("6",  "Actual Ampere",                          n_chain["actual_amp"],    f_chain["actual_amp"]),
-            ("6",  "Design Ampere (×" + f"{cfg['design_margin']:.2f}" + ")  →  🔲 เลือก Busway",
-                                                              n_chain["design_amp"],    f_chain["design_amp"]),
+            ("1",  "Max IT Load per UPS", "kW",
+             "Normal = Normal Operation Load สูงสุดต่อ UPS ของกลุ่ม (Section 3 แท็บผลลัพธ์) | "
+             "Fault = Max Fault Load ของกลุ่ม (Section 5 แท็บผลลัพธ์)",
+             n_chain["it_kw"], f_chain["it_kw"]),
+            ("2",  "+ Transmission Loss", "kW",
+             f"Max IT Load × tx_loss = Max IT Load × {cfg['tx_loss']:.3f}",
+             n_chain["connected_it"] - n_chain["it_kw"], f_chain["connected_it"] - f_chain["it_kw"]),
+            ("2",  "= Connected IT Load  →  🔲 เลือก UPS", "kW",
+             "Max IT Load + Transmission Loss (แถวบน)",
+             n_chain["connected_it"], f_chain["connected_it"]),
+            ("3",  "+ UPS Loss", "kW",
+             f"Connected IT Load × (1/UPS Eff − 1) = Connected IT Load × (1/{cfg['ups_eff']:.3f} − 1)",
+             n_chain["ups_loss"], f_chain["ups_loss"]),
+            ("3",  "+ UPS Battery Charging", "kW",
+             f"ค่าคงที่จาก Assumption = {cfg['ups_charging']:,.1f} kW (เท่ากันทั้ง Normal/Fault)",
+             n_chain["ups_charging"], f_chain["ups_charging"]),
+            ("3",  "= Total UPS Output", "kW",
+             "Connected IT Load + UPS Loss + UPS Battery Charging",
+             n_chain["ups_total_out"], f_chain["ups_total_out"]),
+            ("4",  "+ HVAC Load in PTU", "kW",
+             f"ค่าคงที่จาก Assumption = {cfg['hvac_total']:,.1f} kW (เท่ากันทั้ง Normal/Fault)",
+             n_chain["hvac"], f_chain["hvac"]),
+            ("4",  "= Total PTU Load (kW)", "kW",
+             "Total UPS Output + HVAC Load",
+             n_chain["ptu_kw"], f_chain["ptu_kw"]),
+            ("4",  "= Total PTU Load (kVA)", "kVA",
+             f"Total PTU Load (kW) ÷ PF = Total PTU Load (kW) ÷ {cfg['pf']:.2f}",
+             n_chain["ptu_kva"], f_chain["ptu_kva"]),
+            ("5",  "+ Transmission Loss", "kW",
+             f"Total PTU Load (kW) × tx_loss = Total PTU Load (kW) × {cfg['tx_loss']:.3f}",
+             n_chain["total_connected"] - n_chain["ptu_kw"], f_chain["total_connected"] - f_chain["ptu_kw"]),
+            ("5",  "= Total Connected Load (kW)  →  🔲 เลือก Generator", "kW",
+             "Total PTU Load (kW) + Transmission Loss (แถวบน)",
+             n_chain["total_connected"], f_chain["total_connected"]),
+            ("5",  "= Total Connected Load (kVA)  →  🔲 เลือก Transformer", "kVA",
+             f"Total Connected Load (kW) ÷ PF = Total Connected Load (kW) ÷ {cfg['pf']:.2f}",
+             n_chain["total_connected_kva"], f_chain["total_connected_kva"]),
+            ("6",  "Actual Ampere", "A",
+             f"I = (kVA × 1000) / (√3 × V) = (Total PTU Load kVA × 1000) / (1.732 × {cfg['voltage']:,.0f}) "
+             "— ใช้ kVA ของ Step 4 (ฝั่ง PTU ก่อนเข้าสาย Loss ครั้งที่ 2) เพราะ Busway อยู่ต้นสายฝั่งนี้",
+             n_chain["actual_amp"], f_chain["actual_amp"]),
+            ("6",  "= Design Ampere  →  🔲 เลือก Busway", "A",
+             f"Actual Ampere × Design Margin = Actual Ampere × {cfg['design_margin']:.2f}",
+             n_chain["design_amp"], f_chain["design_amp"]),
         ]
 
-        chain_df = pd.DataFrame(chain_rows, columns=["Step", "Description", "Normal", "Fault (Worst Case)"])
+        chain_df = pd.DataFrame(
+            chain_rows, columns=["Step", "Description", "หน่วย", "สูตร (มาจากไหน)", "Normal", "Fault (Worst Case)"]
+        )
         chain_df["Normal"]             = chain_df["Normal"].apply(lambda x: f"{x:,.1f}")
         chain_df["Fault (Worst Case)"] = chain_df["Fault (Worst Case)"].apply(lambda x: f"{x:,.1f}")
         st.dataframe(chain_df, use_container_width=True, hide_index=True)
