@@ -38,20 +38,6 @@ WHITE_BOLD = Font(color="FFFFFF", bold=True)
 BOLD       = Font(bold=True)
 RED_BOLD   = Font(color="C00000", bold=True)
 
-# ── ธีมสี "Bright" เฉพาะ sheet รายกลุ่ม (_write_group_sheet) — อิงจาก template อ้างอิงของผู้ใช้
-# (สีสด เหลือง/เขียว/แดง แทน navy พาสเทลเดิม) ไม่กระทบ sheet Summary ที่ยังใช้ธีมเดิมด้านบนอยู่
-GS_FONT_FAMILY    = "Browallia New"
-GS_TITLE_FILL     = PatternFill("solid", fgColor="FFFF00")     # เหลืองสด (หัวเรื่อง)
-GS_NORMAL_FILL    = PatternFill("solid", fgColor="00B050")     # เขียวสด (หัว Normal Operation)
-GS_FAIL_FILL      = PatternFill("solid", fgColor="FF0000")     # แดงสด (หัวกลุ่ม X Failure)
-GS_FAIL_CELL_FILL = PatternFill("solid", fgColor="FF0000")     # แดงสด (cell ที่ fail จริง)
-GS_SUBTOTAL_FILL  = PatternFill("solid", fgColor="FFFFCC")     # ครีมอ่อน (เหมือน template เป๊ะ)
-GS_BAND_FILL      = PatternFill("solid", fgColor="FFFDE7B0")   # ครีมอ่อนมาก (ลายทางสลับแถวข้อมูล)
-GS_TRANSFER_FILL  = PatternFill("solid", fgColor="C6E8C6")     # เขียวอ่อน (cell ที่รับโหลดย้ายมาตอน fail)
-GS_TITLE_FONT     = Font(name=GS_FONT_FAMILY, color="000000", bold=True, size=16)   # ดำบนเหลือง
-GS_WHITE_BOLD     = Font(name=GS_FONT_FAMILY, color="FFFFFF", bold=True)            # ขาวบนพื้นเข้ม (เขียว/แดงสด)
-GS_TRANSFER_FONT  = Font(name=GS_FONT_FAMILY, color="1B5E20", bold=True)            # เขียวเข้ม บน cell รับโหลดย้าย
-
 THIN = Side(style="thin", color=GRID)
 MEDIUM_NAVY = Side(style="medium", color=NAVY)
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
@@ -78,17 +64,6 @@ def _card_outline(ws, r1, c1, r2, c2):
         ws.cell(row=r, column=c1).border = Border(left=MEDIUM_NAVY, right=b.right, top=b.top, bottom=b.bottom)
         b = ws.cell(row=r, column=c2).border
         ws.cell(row=r, column=c2).border = Border(left=b.left, right=MEDIUM_NAVY, top=b.top, bottom=b.bottom)
-
-
-def _apply_font_family(ws, name=GS_FONT_FAMILY):
-    """เปลี่ยน font family ทั้งชีตเป็นตัวเดียว (Browallia New ตาม template อ้างอิง) — คง
-    bold/color/size ของแต่ละ cell ไว้เหมือนเดิมทุกอย่าง เปลี่ยนแค่ชื่อ font"""
-    for row in ws.iter_rows():
-        for cell in row:
-            f = cell.font
-            if f.name != name:
-                cell.font = Font(name=name, size=f.size, bold=f.bold, italic=f.italic,
-                                  color=f.color, underline=f.underline, strike=f.strike)
 
 
 def _skip_cell(ws, row, col):
@@ -135,9 +110,9 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
     # ── Title ──
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
     t = ws.cell(row=1, column=1, value=f"Load Calculation for {sheet_title}")
-    t.font = GS_TITLE_FONT
+    t.font = TITLE_FONT_LG
     t.alignment = CENTER
-    t.fill = GS_TITLE_FILL
+    t.fill = TITLE_FILL
     ws.row_dimensions[1].height = 26
 
     # ── Header แถว 3: ชื่อ scenario ──
@@ -154,9 +129,9 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
         ws.merge_cells(start_row=3, start_column=cols[0], end_row=3, end_column=cols[-1])
         cell = ws.cell(row=3, column=cols[0],
                         value="Normal Operation" if sc == "Normal" else f"{labels[sc]} Failure")
-        cell.font = GS_WHITE_BOLD
+        cell.font = WHITE_BOLD
         cell.alignment = CENTER
-        cell.fill = GS_NORMAL_FILL if sc == "Normal" else GS_FAIL_FILL
+        cell.fill = NORMAL_FILL if sc == "Normal" else FAIL_FILL
 
     # ── Header แถว 4: kW/PF/kW + A/B/C/D ──
     for j, label in enumerate(["kW", "PF", "kW"]):
@@ -169,8 +144,8 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
             cell = ws.cell(row=4, column=col_i, value=(f"{labels[u]} Fail" if is_fail_col else f"Load {labels[u]}"))
             cell.alignment = CENTER
             if is_fail_col:
-                cell.font = GS_WHITE_BOLD
-                cell.fill = GS_FAIL_CELL_FILL
+                cell.font = Font(color="C00000", bold=True)
+                cell.fill = FAIL_CELL_FILL
             else:
                 cell.font = BOLD
 
@@ -188,7 +163,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
     for i, r in enumerate(grp):
         if i % 2 == 1:
             for band_col in (1, 2, 3, 4, 5):
-                ws.cell(row=row, column=band_col).fill = GS_BAND_FILL
+                ws.cell(row=row, column=band_col).fill = BAND_FILL
         ws.cell(row=row, column=2, value=f"  - DATA HALL ({r['hac']} {r['side']})")
         ws.cell(row=row, column=3, value=r["kw"])
         ws.cell(row=row, column=4, value=1.0)
@@ -199,36 +174,23 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
             v = n.get(u, 0.0)
             ws.cell(row=row, column=col_i, value=(v if v else None))
 
-        # แถวนี้เป็นแถว 2-source ไหม (สำคัญกับการโชว์ "A → B" — เฉพาะ pair 2 ตัว ถึงชี้เป้าเดียวได้ชัด)
-        is_pair_row = len(r["pair"]) == 2
         for faulted in ups_units:
             f = compute_fault_loads([r], faulted, ups_units)
-            faulted_in_pair = faulted in r["pair"]
             for u, col_i in zip(ups_units, scenario_cols[faulted]):
                 if u == faulted:
                     cell = ws.cell(row=row, column=col_i, value="FAIL")
-                    cell.font = GS_WHITE_BOLD
-                    cell.fill = GS_FAIL_CELL_FILL
+                    cell.font = RED_BOLD
+                    cell.fill = FAIL_CELL_FILL
                     cell.alignment = CENTER
                 else:
                     v = f.get(u, 0.0)
-                    cell = ws.cell(row=row, column=col_i, value=(v if v else None))
-                    if v and faulted_in_pair and u in r["pair"]:
-                        # โหลดของแถวนี้ย้ายมาที่ตัวนี้เพราะ faulted พัง — โชว์ "A → B" ตามต้นแบบ
-                        # (เฉพาะ 2-source ที่ชี้เป้าได้ตัวเดียวชัดเจน; 4-source แค่ไฮไลท์เฉยๆ เพราะ
-                        # กระจายไป 3 ตัวพร้อมกัน ชี้เป้าเดียวไม่ได้) — ค่า/สูตรเดิมไม่เปลี่ยน แค่ format
-                        cell.fill = GS_TRANSFER_FILL
-                        if is_pair_row:
-                            cell.number_format = f'"{labels[faulted]} → "#,##0.00'
-                            cell.font = GS_TRANSFER_FONT
+                    ws.cell(row=row, column=col_i, value=(v if v else None))
         row += 1
     data_end = row - 1
 
     for col_i in range(3, last_col + 1):
         for r in range(data_start, data_end + 1):
-            cell = ws.cell(row=r, column=col_i)
-            if cell.fill != GS_TRANSFER_FILL:   # อย่าทับ number_format ของ cell "A → B" ที่เพิ่งตั้งไว้ด้านบน
-                cell.number_format = "#,##0.00"
+            ws.cell(row=r, column=col_i).number_format = "#,##0.00"
 
     # ── Total Power Consumption for Data Hall ──
     total_row = row
@@ -247,7 +209,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
         if cell.fill == GREY_SKIP_FILL:
             continue
         cell.font = BOLD
-        cell.fill = GS_SUBTOTAL_FILL
+        cell.fill = SUBTOTAL_FILL
         cell.number_format = "#,##0.00"
     row += 2
 
@@ -322,7 +284,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
             for c in range(2, last_col + 1):
                 cell = ws.cell(row=r, column=c)
                 if cell.fill != GREY_SKIP_FILL:
-                    cell.fill = GS_SUBTOTAL_FILL
+                    cell.fill = SUBTOTAL_FILL
         row += 1
         return r
 
@@ -404,7 +366,6 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
     for col_i in range(3, last_col + 1):
         ws.column_dimensions[get_column_letter(col_i)].width = 12
     ws.freeze_panes = "C5"
-    _apply_font_family(ws)
     return ws
 
 
