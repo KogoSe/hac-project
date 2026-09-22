@@ -1,6 +1,11 @@
 """
 TAB 2: RESULTS — Pairing Optimization ผลลัพธ์
 """
+import os
+import tempfile
+import threading
+import time
+
 import streamlit as st
 import pandas as pd
 
@@ -8,7 +13,9 @@ from constants import GROUP_BADGE_COLORS, ups_display_label, get_group_ups_units
 from engine.pairing import (
     parse_rack_layout, build_row_units, compute_normal_loads, compute_fault_loads,
 )
-from engine.optimization import DEFAULT_TIME_LIMIT, solve_pairing_milp, solve_pairing_milp_free
+from engine.optimization import (
+    DEFAULT_TIME_LIMIT, solve_pairing_milp, solve_pairing_milp_free, parse_cbc_progress,
+)
 from ui.svg_diagram import build_hac_svg
 
 # ── สีสำหรับตาราง Load Breakdown — ไล่ตามตำแหน่ง UPS ในกลุ่ม (ไม่ผูกกับชื่อตัวอักษรตายตัวอีกแล้ว
@@ -141,6 +148,68 @@ def build_load_breakdown_table(grp: list[dict], gi: int, ups_units: list, n_ups_
     return "".join(html)
 
 
+def _solve_with_progress(mode, row_units, n_groups, n_ups_per_group, time_limit, warm_start_groups):
+    """รัน MILP เหมือนเดิมทุกประการ (เรียก solve_pairing_milp/_free ตรงๆ ใน background thread)
+    แต่ระหว่างรอ tail ไฟล์ log ของ CBC (ที่ตัว solve function เขียนอยู่แล้วตามปกติ) มาโชว์
+    เวลา/gap/best-solution สดๆ แทน — ไม่แตะ logic การ solve หรือ solver params ใดๆ เลย
+    เป็นแค่การอ่านไฟล์ log คู่ขนานไปเฉยๆ พอ solve เสร็จ placeholder นี้จะหายไป"""
+    log_fd, log_path = tempfile.mkstemp(suffix=".log")
+    os.close(log_fd)
+
+    result_box: dict = {}
+
+    def _run():
+        try:
+            if mode == "free":
+                result_box["result"] = solve_pairing_milp_free(
+                    row_units, n_groups, n_ups_per_group=n_ups_per_group,
+                    time_limit=time_limit, warm_start_groups=warm_start_groups,
+                    log_path=log_path,
+                )
+            else:
+                result_box["result"] = solve_pairing_milp(
+                    row_units, n_groups, n_ups_per_group=n_ups_per_group,
+                    time_limit=time_limit, log_path=log_path,
+                )
+        except Exception as e:  # ส่งต่อ exception ไปโยนซ้ำใน main thread เหมือนเดิมถ้าไม่มี progress feature
+            result_box["error"] = e
+
+    thread = threading.Thread(target=_run, daemon=True)
+    start = time.time()
+    thread.start()
+
+    placeholder = st.empty()
+    while thread.is_alive():
+        elapsed = time.time() - start
+        try:
+            with open(log_path, "r", errors="ignore") as f:
+                log_text = f.read()
+        except OSError:
+            log_text = ""
+        prog = parse_cbc_progress(log_text)
+        parts = [f"⏱ {elapsed:.0f} วินาที"]
+        if prog["gap_pct"] is not None:
+            parts.append(f"gap ~{prog['gap_pct']:.2f}%")
+        if prog["best"] is not None:
+            parts.append(f"คำตอบที่ดีสุดตอนนี้ ~{prog['best']:,.0f} kW")
+        if prog["incumbent_count"]:
+            parts.append(f"เจอคำตอบดีขึ้น {prog['incumbent_count']} ครั้ง")
+        placeholder.info("⏳ กำลังคำนวณ MILP... " + " | ".join(parts))
+        time.sleep(1.0)
+
+    thread.join()
+    placeholder.empty()
+
+    try:
+        os.remove(log_path)
+    except OSError:
+        pass
+
+    if "error" in result_box:
+        raise result_box["error"]
+    return result_box["result"]
+
+
 def render():
     edited_df = st.session_state.hac_df.dropna(subset=["HAC Name"]).copy()
     if "Source Type" not in edited_df.columns:
@@ -184,13 +253,10 @@ def render():
     if st.session_state.get("milp_cache_key") == solve_key and st.session_state.get("milp_result") is not None:
         milp_result = st.session_state.milp_result
     else:
-        if mode == "free":
-            milp_result = solve_pairing_milp_free(
-                row_units, n_groups, n_ups_per_group=n_ups_per_group,
-                time_limit=time_limit, warm_start_groups=warm_start_groups
-            )
-        else:
-            milp_result = solve_pairing_milp(row_units, n_groups, n_ups_per_group=n_ups_per_group, time_limit=time_limit)
+        milp_result = _solve_with_progress(
+            mode, row_units, n_groups, n_ups_per_group, time_limit, warm_start_groups
+        )
+        if mode != "free":
             st.session_state.last_contiguous_groups = milp_result["groups"]
         st.session_state.milp_result = milp_result  # ให้ tab_proof.py ใช้ต่อ (ไม่ solve ซ้ำ)
         st.session_state.milp_cache_key = solve_key

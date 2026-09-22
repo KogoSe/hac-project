@@ -21,6 +21,7 @@ ENGINE — MILP Optimization: grouping (contiguous cut) + pairing (2-source) + q
 """
 import functools
 import itertools
+import re
 import pulp
 
 from constants import get_group_ups_units
@@ -124,6 +125,29 @@ def _parse_cbc_log(log_text: str) -> dict:
     }
 
 
+_CBC_PROGRESS_RE = re.compile(
+    r"After\s+(?P<nodes>\d+)\s+nodes.*?"
+    r"(?P<best>[\d.eE+-]+)\s+best solution,\s+best possible\s+(?P<bound>[\d.eE+-]+)"
+    r"(?:\s*\((?P<gap>[\d.]+)%\s*gap\))?"
+)
+_CBC_INCUMBENT_RE = re.compile(r"Integer solution of")
+
+
+def parse_cbc_progress(log_text: str) -> dict:
+    """อ่านสถานะระหว่างรันจาก CBC log ที่ยัง solve ไม่เสร็จ (ต่าง _parse_cbc_log ที่คาดว่า log จบแล้ว)
+    ใช้บรรทัดล่าสุดที่เจอ (CBC พิมพ์บรรทัดนี้ซ้ำเป็นระยะระหว่าง branch & bound) — ไม่มีผลต่อการ solve
+    เอง เป็นแค่การอ่านไฟล์ log ที่ CBC เขียนอยู่แล้วเฉยๆ"""
+    matches = list(_CBC_PROGRESS_RE.finditer(log_text))
+    last = matches[-1] if matches else None
+    return {
+        "nodes": int(last.group("nodes")) if last else None,
+        "best": float(last.group("best")) if last else None,
+        "bound": float(last.group("bound")) if last else None,
+        "gap_pct": float(last.group("gap")) if last and last.group("gap") else None,
+        "incumbent_count": len(_CBC_INCUMBENT_RE.findall(log_text)),
+    }
+
+
 def _add_subset_assignment_vars(prob, idx_list, subsets, y_expr, n_groups, var_prefix):
     """สร้าง binary var[i][g][subset] + equality constraint sum_subset var == y_expr(i,g)
     ใช้ร่วมกันทั้ง q[i][g][p] (2-source, subsets=pairs) และ q4[i][g][quad] (4-source, subsets=quads)"""
@@ -194,6 +218,7 @@ def solve_pairing_milp(
     n_ups_per_group: int = DEFAULT_N_UPS_PER_GROUP,
     time_limit: int = DEFAULT_TIME_LIMIT,
     gap_rel: float = DEFAULT_GAP_REL,
+    log_path: str | None = None,
 ) -> dict:
     """
     MILP เดียว รวม grouping (contiguous cut) + pairing (2-source) + quad-assignment (4-source)
@@ -248,8 +273,12 @@ def solve_pairing_milp(
     M = _build_objective(prob, n_groups, ups_units, two_idx, four_idx, row_units, q, q4, pairs, quads, y_expr)
 
     import tempfile, os
-    log_fd, log_path = tempfile.mkstemp(suffix=".log")
-    os.close(log_fd)
+    # log_path: ถ้าผู้เรียกส่งมาเอง (เช่นจะ tail ไฟล์นี้ดู progress ระหว่าง solve) ให้ใช้ตามนั้นและ
+    # ไม่ลบทิ้งหลัง solve — ผู้เรียกเป็นเจ้าของไฟล์และรับผิดชอบลบเอง ถ้าไม่ส่งมา พฤติกรรมเดิมทุกประการ
+    own_log = log_path is None
+    if own_log:
+        log_fd, log_path = tempfile.mkstemp(suffix=".log")
+        os.close(log_fd)
     solver = pulp.PULP_CBC_CMD(msg=0, timeLimit=time_limit, gapRel=gap_rel, logPath=log_path)
     prob.solve(solver)
 
@@ -260,10 +289,11 @@ def solve_pairing_milp(
     except OSError:
         pass
     finally:
-        try:
-            os.remove(log_path)
-        except OSError:
-            pass
+        if own_log:
+            try:
+                os.remove(log_path)
+            except OSError:
+                pass
 
     solver_info = _parse_cbc_log(log_text)
     if solver_info["proven_optimal"]:
@@ -309,6 +339,7 @@ def solve_pairing_milp_free(
     time_limit: int = DEFAULT_TIME_LIMIT,
     gap_rel: float = DEFAULT_GAP_REL,
     warm_start_groups: list[list[dict]] | None = None,
+    log_path: str | None = None,
 ) -> dict:
     """
     เหมือน solve_pairing_milp() ทุกประการ ยกเว้น "วิธี assign แถวเข้ากลุ่ม" — ตัวนี้ไม่บังคับ
@@ -380,8 +411,12 @@ def solve_pairing_milp_free(
             warm_start_used = True
 
     import platform, tempfile, os
-    log_fd, log_path = tempfile.mkstemp(suffix=".log")
-    os.close(log_fd)
+    # log_path: ถ้าผู้เรียกส่งมาเอง (เช่นจะ tail ไฟล์นี้ดู progress ระหว่าง solve) ให้ใช้ตามนั้นและ
+    # ไม่ลบทิ้งหลัง solve — ผู้เรียกเป็นเจ้าของไฟล์และรับผิดชอบลบเอง ถ้าไม่ส่งมา พฤติกรรมเดิมทุกประการ
+    own_log = log_path is None
+    if own_log:
+        log_fd, log_path = tempfile.mkstemp(suffix=".log")
+        os.close(log_fd)
     # PuLP: on Windows, warmStart is silently ignored unless keepFiles=True (writes the
     # .mps/.sol/.mst files next to lp.name in cwd instead of a tmp dir) — we clean them up below.
     keep_files = warm_start_used and platform.system() == "Windows"
@@ -398,10 +433,11 @@ def solve_pairing_milp_free(
     except OSError:
         pass
     finally:
-        try:
-            os.remove(log_path)
-        except OSError:
-            pass
+        if own_log:
+            try:
+                os.remove(log_path)
+            except OSError:
+                pass
 
     if keep_files:
         for ext in ("lp", "mps", "sol", "mst"):
