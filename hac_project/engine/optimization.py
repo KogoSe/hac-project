@@ -125,25 +125,44 @@ def _parse_cbc_log(log_text: str) -> dict:
     }
 
 
-_CBC_PROGRESS_RE = re.compile(
+_CBC_BB_RE = re.compile(
     r"After\s+(?P<nodes>\d+)\s+nodes.*?"
     r"(?P<best>[\d.eE+-]+)\s+best solution,\s+best possible\s+(?P<bound>[\d.eE+-]+)"
-    r"(?:\s*\((?P<gap>[\d.]+)%\s*gap\))?"
 )
-_CBC_INCUMBENT_RE = re.compile(r"Integer solution of")
+_CBC_INCUMBENT_RE = re.compile(r"Integer solution of\s+(?P<val>[\d.eE+-]+)\s+found")
+_CBC_ROOT_BOUND_RE = re.compile(r"cuts changed objective from\s+[\d.eE+-]+\s+to\s+(?P<bound>[\d.eE+-]+)")
 
 
 def parse_cbc_progress(log_text: str) -> dict:
     """อ่านสถานะระหว่างรันจาก CBC log ที่ยัง solve ไม่เสร็จ (ต่าง _parse_cbc_log ที่คาดว่า log จบแล้ว)
-    ใช้บรรทัดล่าสุดที่เจอ (CBC พิมพ์บรรทัดนี้ซ้ำเป็นระยะระหว่าง branch & bound) — ไม่มีผลต่อการ solve
-    เอง เป็นแค่การอ่านไฟล์ log ที่ CBC เขียนอยู่แล้วเฉยๆ"""
-    matches = list(_CBC_PROGRESS_RE.finditer(log_text))
-    last = matches[-1] if matches else None
+    ใช้ข้อมูลล่าสุดที่เจอ — ไม่มีผลต่อการ solve เอง เป็นแค่การอ่านไฟล์ log ที่ CBC เขียนอยู่แล้วเฉยๆ
+
+    หมายเหตุ: CBC ไม่ได้เข้า branch & bound (บรรทัด "After N nodes, ... best possible X") เสมอไป —
+    เคสที่โมเดลใหญ่/ซับซ้อน มันอาจใช้เวลาทั้งหมดอยู่กับ root-node cut generation / feasibility pump
+    (0 nodes ตลอด) ซึ่งไม่มีบรรทัดนั้นเลยทั้ง run ก่อนโดน time limit เลยต้อง fallback ไปอ่าน
+    "Integer solution of X found" (best จาก incumbent ล่าสุด) และ "cuts changed objective from A
+    to B" (bound จาก root-node cuts ล่าสุด) แทน เพื่อให้ยังมีอะไรให้โชว์ระหว่างช่วง cut generation"""
+    bb_matches = list(_CBC_BB_RE.finditer(log_text))
+    nodes = best = bound = None
+    if bb_matches:
+        last = bb_matches[-1]
+        nodes = int(last.group("nodes"))
+        best = float(last.group("best"))
+        bound = float(last.group("bound"))
+    else:
+        incumbents = list(_CBC_INCUMBENT_RE.finditer(log_text))
+        if incumbents:
+            best = float(incumbents[-1].group("val"))
+        root_bounds = list(_CBC_ROOT_BOUND_RE.finditer(log_text))
+        if root_bounds:
+            bound = float(root_bounds[-1].group("bound"))
+
+    gap_pct = abs(best - bound) / abs(bound) * 100 if best is not None and bound not in (None, 0.0) else None
     return {
-        "nodes": int(last.group("nodes")) if last else None,
-        "best": float(last.group("best")) if last else None,
-        "bound": float(last.group("bound")) if last else None,
-        "gap_pct": float(last.group("gap")) if last and last.group("gap") else None,
+        "nodes": nodes,
+        "best": best,
+        "bound": bound,
+        "gap_pct": gap_pct,
         "incumbent_count": len(_CBC_INCUMBENT_RE.findall(log_text)),
     }
 
