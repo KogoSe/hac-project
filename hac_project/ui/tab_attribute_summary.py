@@ -237,7 +237,7 @@ def render():
         "GEN_S_GROUNDCABLE":   "BS 7671 — ฐาน Generator (ดูตาราง B ด้านบน)",
         "PTU_GROUNDCABLE":     "BS 7671 — ฐาน Generator เดียวกับ GEN_S_GROUNDCABLE (ดูตาราง B ด้านบน)",
         "RMU_CB":       f"I_rated ของ Transformer เอง ที่ MV={mv_voltage_kv}kV — เลือก 200A หรือ 630A",
-        "RMU_BUSBAR":   f"I_rated × 4 (รองรับกรณี ring ขาด 1 เส้น ต้องเลี้ยงโหลด RMU ทั้ง 4 ตัวรวมกัน) — เลือก 200A หรือ 630A",
+        "RMU_BUSBAR":   f"I_rated × {n_ups_per_group} (รองรับกรณี ring ขาด 1 เส้น ต้องเลี้ยงโหลด RMU ทั้ง {n_ups_per_group} ตัวรวมกัน) — เลือก 200A หรือ 630A",
         "RMU_LEFT_CB":  "เท่ากับ RMU_BUSBAR (Load Break switch สำหรับเชื่อม ring กับ RMU ข้างเคียง)",
         "RMU_RIGHT_LB": "เท่ากับ RMU_BUSBAR (Load Break switch สำหรับเชื่อม ring กับ RMU ข้างเคียง)",
     }
