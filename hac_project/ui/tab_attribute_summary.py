@@ -49,7 +49,7 @@ def render():
     # ── เลือกกลุ่ม Generator (แต่ละกลุ่มมีขนาดของตัวเองอิสระกัน) ──────────
     n_grp = st.session_state.get("n_groups", 3)
     grp_options = [f"Group {i}" for i in range(1, n_grp + 1)]
-    selected_grp = st.selectbox("เลือกกลุ่มPTU 1กลุ่ม ", options=grp_options, key="attr_summary_grp_select")
+    selected_grp = st.selectbox("เลือกกลุ่มPTU ", options=grp_options, key="attr_summary_grp_select")
     gi = grp_options.index(selected_grp) + 1
 
     if gi > len(group_calcs):

@@ -214,7 +214,7 @@ def render():
     # เดียวกับ Equipment Sizing tab) ให้เห็นว่า n_groups/n_ups_per_group แบบไหนน่าลอง ก่อนต้อง
     # กด solve MILP จริงทีละแบบ ───────────────────────────────────────────────────
     st.divider()
-    with st.expander("🎯 แนะนำ Config อัตโนมัติ (ประมาณคร่าวๆ ก่อน — ไม่ใช่คำตอบสุดท้าย)", expanded=False):
+    with st.expander("🎯 แนะนำ Config อัตโนมัติ (การหาว่า ควรมีกี่กลุ่มและแต่ละกลุ่มควรมีกี่ PTU)", expanded=False):
         st.caption(
             "หารโหลดรวมเท่าๆกันทุกกลุ่ม (ประมาณคร่าวๆ ของจริง MILP จะแบ่งไม่เท่ากันเป๊ะ) แล้วเทียบกับ "
             "Standard Size List เดียวกับแท็บ Equipment Sizing เพื่อดู utilization — ใช้เลือก 2-3 config "
@@ -258,12 +258,12 @@ def render():
     st.divider()
     st.subheader("⚙️ ตั้งค่า Optimization")
     n_groups = st.number_input(
-        "จำนวนกลุ่ม PTU 1กลุ่ม อาจมี 4,5,6 PTU(ABCD..) (default = 3)",
+        "จำนวนกลุ่ม => 1กลุ่ม อาจมี 4,5,6 PTU(ABCD..) (default = 3)",
         min_value=1, max_value=6, value=3, step=1, key="n_groups_input",
     )
     st.session_state.n_groups = int(n_groups)
     n_ups_per_group = st.selectbox(
-        "จำนวน PTU/UPS ต่อกลุ่ม",
+        "จำนวน PTU ต่อกลุ่ม",
         options=N_UPS_PER_GROUP_OPTIONS, index=0, key="n_ups_per_group_select",
         format_func=lambda n: f"{n} PTU ({''.join(get_group_ups_units(n))})",
         help="ปกติกลุ่มนึงมี 4 PTU (A,B,C,D) — ถ้าเลือก 5/6 แถวที่เป็น 2-source จะจับคู่ (pair) ได้หลากหลาย"
@@ -311,7 +311,7 @@ def render():
             st.session_state.run_optimization = True
             st.session_state.optimization_mode = "free"
             st.success("✅ คำนวณเสร็จแล้ว (โหมดไม่จำกัดลำดับ — ใช้เทียบเท่านั้น ห้ามเดินสายจริง) — เปิดแท็บ ผลลัพธ์ เพื่อดูผล")
-    st.caption("🔓 โหมด 'ไม่จำกัดลำดับ' จับกลุ่มข้ามหัวกันได้อิสระ ไม่มีข้อจำกัดทางกายภาพ — ใช้เป็นเครื่องมือเทียบว่าดีกว่าปัจจุบันแค่ไหนเท่านั้น ห้ามเอาไปเดินสายจริง")
+    st.caption("🔓 โหมด 'ไม่จำกัดลำดับ' จับกลุ่มข้ามหัวกันได้อิสระ ไม่มีข้อจำกัดทางกายภาพ — ใช้เป็นเครื่องมือเปรียบเทียบ เนื่องจากอาจเกิดข้อจำกัดในการเดินสาย")
 
 
 
