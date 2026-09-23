@@ -92,7 +92,7 @@ def _write_group_sheet(wb, sheet_title, grp, cfg, equip, gi, n_ups_per_group=4):
     ป้ายแสดงผลไล่ต่อเนื่องตามกลุ่มจริงผ่าน ups_display_label)
     """
     ws = wb.create_sheet(title=sheet_title[:31])
-    ws.sheet_view.showGridLines = False
+    ws.sheet_view.showGridLines = True
     ups_units = get_group_ups_units(n_ups_per_group)
     scenarios = ["Normal"] + ups_units
     labels = {u: ups_display_label(gi, u, n_ups_per_group) for u in ups_units}
