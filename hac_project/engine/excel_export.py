@@ -492,7 +492,7 @@ def _write_summary_sheet(wb, groups_data, n_ups_per_group=4):
     """
     ups_units = get_group_ups_units(n_ups_per_group)
     ws = wb.create_sheet(title="Summary", index=0)
-    ws.sheet_view.showGridLines = False
+    ws.sheet_view.showGridLines = True
     ws.merge_cells("A1:H1")
     t = ws.cell(row=1, column=1, value="LEVEL 3 IT LOAD ANALYSIS — SUMMARY")
     t.font = SUMMARY_TITLE_FONT_LG
