@@ -4,3 +4,4 @@ openpyxl
 ezdxf
 pulp
 python-docx
+matplotlib
