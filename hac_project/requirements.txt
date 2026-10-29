@@ -2,6 +2,6 @@ streamlit
 pandas
 openpyxl
 ezdxf
-pulp
+pulp<4
 python-docx
 matplotlib
