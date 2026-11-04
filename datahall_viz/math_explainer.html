@@ -441,6 +441,23 @@ footer button{white-space:nowrap}
 .pgrid{margin-top:8px!important}
 .pbtns{margin-bottom:6px!important}
 .fchips{margin-top:8px!important}
+
+/* ---- v8: group tabs on the failure page ---- */
+.gtabs{display:flex;gap:8px;justify-content:center;margin-bottom:8px}
+.gtabs button{display:flex;align-items:center;gap:7px;background:var(--panel2);color:var(--mute);border:1px solid var(--line2);border-radius:9px;padding:6px 14px;font:600 13px var(--sans);cursor:pointer;transition:.3s}
+.gtabs button:hover{color:var(--text);border-color:var(--amber)}
+.gtabs button.on{color:var(--text);border-color:var(--amber);background:rgba(245,165,36,.1)}
+.gtabs .dot{margin:0}
+.rowslot{transition:opacity .6s}
+.rowslot rect{transition:stroke .5s}
+.gsum{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:8px;opacity:0;transform:translateY(8px);transition:opacity .5s,transform .5s}
+.gsum.on{opacity:1;transform:none}
+.gsum span{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--mute);padding:5px 12px;border:1px solid var(--line2);border-radius:20px;transition:.4s}
+.gsum span i{width:9px;height:9px;border-radius:3px;display:inline-block}
+.gsum span.sel{color:var(--text);border-color:var(--mute)}
+.gsum span.top{border-color:var(--amber)}
+.gsum b{color:var(--amber);font-family:var(--mono)}
+.gsum .mm{border-color:var(--amber);color:var(--text)}
 </style>
 </head>
 <body>
@@ -510,6 +527,8 @@ function tween(el, to, f = v => fmt(v, 0), dur = 650) {
   const stepf = t => { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = f(from + (to - from) * e); if (k < 1) el._r = requestAnimationFrame(stepf); };
   stepf(t0);
 }
+
+const ROWCOL = ["#f472b6", "#a3e635", "#a78bfa", "#fb923c", "#22d3ee", "#fb7185", "#facc15", "#e5e7eb"];
 function animDot(dot, pts, dur) {
   cancelAnimationFrame(animDot.r); const lens = []; let tot = 0;
   for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); lens.push(l); tot += l; }
@@ -682,34 +701,41 @@ const B = (() => {
 })();
 
 /* =========================================================
-   MODULE 3 - failure coefficients c[s,f,u]   (UPS on top, rows below)
+   MODULE - failure coefficients c[s,f,u]   (UPS on top, rows below)
+   uses the groups from the Cuts page and the pairs chosen on the Pairing page
    ========================================================= */
 const C = (() => {
-  const rows = [{ kw: 300, sub: "AB" }, { kw: 250, sub: "CD" }, { kw: 400, sub: "AC" }];
-  let f = "A", step = 0, builtN = 0, E = null;
-  const units = () => UNITS(S.n);
-  const loads = fault => { const L = {}; units().forEach(u => L[u] = 0); rows.forEach(r => units().forEach(u => { L[u] += fault ? r.kw * coeff(r.sub, fault, u) : (r.sub.includes(u) ? r.kw / r.sub.length : 0); })); if (fault) L[fault] = 0; return L; };
-  const matrix = () => units().map(ff => units().map(u => ff === u ? null : rows.reduce((a, r) => a + r.kw * coeff(r.sub, ff, u), 0)));
+  S.n = 4;
+  const U = UNITS(4), QUAD = "ABCD", SLOTS = 6;
+  let f = "A", step = 0, gsel = 0, E = null, foc = null;
+  const grpOf = i => i < S.b1 ? 0 : i < S.b2 ? 1 : 2;
+  const rowsOfG = g => S.P.map((kw, i) => ({ i, kw })).filter(o => grpOf(o.i) === g).map(o => ({ ...o, sub: S.src && S.src[o.i] === 4 ? QUAD : (S.pair ? S.pair[o.i] : "AB") }));
+  const loadsOf = (rs, fault) => { const L = {}; U.forEach(u => L[u] = 0); rs.forEach(r => U.forEach(u => { L[u] += fault ? r.kw * coeff(r.sub, fault, u) : (r.sub.includes(u) ? r.kw / r.sub.length : 0); })); if (fault) L[fault] = 0; return L; };
+  const matrixOf = rs => U.map(ff => U.map(u => ff === u ? null : rs.reduce((a, r) => a + r.kw * coeff(r.sub, ff, u), 0)));
+  const maxFailG = g => Math.max(...matrixOf(rowsOfG(g)).flat().filter(x => x != null));
 
-  const W = 780, H = 300, UW = 104, UH = 78, uy = 10, RW = 176, RH = 52, ry = H - RH - 12;
+  const W = 780, H = 300, UW = 104, UH = 78, uy = 10, RW = 118, RH = 52, ry = H - RH - 12;
   const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", style: "max-height:250px" });
-  const stage = h("div", "stage top"); const heatWrap = h("div", "heatwrap"); stage.append(svg, heatWrap);
+  const tabs = h("div", "gtabs");
+  const tabEls = [0, 1, 2].map(g => { const b = h("button", null, ""); b.onclick = () => { gsel = g; foc = null; update(step); }; tabs.append(b); return b; });
+  const heatWrap = h("div", "heatwrap"), gsum = h("div", "gsum");
+  const stage = h("div", "stage top"); stage.append(tabs, svg, heatWrap, gsum);
 
   function build() {
-    const us = units(), n = us.length; builtN = n; svg.replaceChildren();
-    const ux = k => 70 + k * ((W - 140) / (n - 1)), rx = i => W * (i + .5) / 3 - RW / 2;
+    svg.replaceChildren();
+    const ux = k => 70 + k * ((W - 140) / 3), rx = k => W * (k + .5) / SLOTS - RW / 2;
     E = { links: [], ups: [], rows: [], heat: [] };
-    rows.forEach((r, i) => us.forEach((u, k) => {
-      const x1 = ux(k), y1 = uy + UH, x2 = rx(i) + RW / 2, y2 = ry;
+    for (let k = 0; k < SLOTS; k++) U.forEach(u => {
+      const x1 = ux(U.indexOf(u)), y1 = uy + UH, x2 = rx(k) + RW / 2, y2 = ry;
       const g = s("g", { class: "lk" }, svg);
       const line = s("line", { x1, y1, x2, y2 }, g);
-      const dot = s("circle", { r: 5, fill: "#f5a524" }, g); s("animateMotion", { dur: "1.5s", repeatCount: "indefinite", path: `M${x1},${y1} L${x2},${y2}` }, dot);
+      const dot = s("circle", { r: 5, fill: "#f5a524" }, g); const am = s("animateMotion", { dur: "1.5s", repeatCount: "indefinite", path: `M${x1},${y1} L${x2},${y2}` }, dot);
       const lx = x1 + (x2 - x1) * .66, ly = y1 + (y2 - y1) * .66;
-      const lg = s("g", { class: "lbl" }, g); s("rect", { x: lx - 22, y: ly - 11, width: 44, height: 20, rx: 6 }, lg);
+      const lg = s("g", { class: "lbl" }, g); s("rect", { x: lx - 20, y: ly - 10, width: 40, height: 19, rx: 6 }, lg);
       const tx = s("text", { x: lx, y: ly + 4, "text-anchor": "middle" }, lg);
-      E.links.push({ i, u, line, dot, lg, tx, rect: $("rect", lg) });
-    }));
-    us.forEach((u, k) => {
+      E.links.push({ k, u, line, dot, am, lg, tx, rect: $("rect", lg), x1, y1, x2, y2 });
+    });
+    U.forEach((u, k) => {
       const g = s("g", { class: "ups", style: "cursor:pointer" }, svg), x = ux(k) - UW / 2;
       const box = s("rect", { x, y: uy, width: UW, height: UH, rx: 11 }, g);
       const bar = s("rect", { x: x + 7, y: uy + UH - 7, width: UW - 14, height: 0, rx: 5, class: "ubar" }, g);
@@ -718,24 +744,22 @@ const C = (() => {
       g.onclick = () => { if (step >= 1) { f = u; update(step); } };
       E.ups.push({ u, g, box, bar, nm, kw });
     });
-    rows.forEach((r, i) => {
-      const g = s("g", {}, svg), x = rx(i);
-      s("rect", { x, y: ry, width: RW, height: RH, rx: 10, fill: "#171a1f", stroke: COLORS[i], "stroke-width": 2 }, g);
-      s("text", { x: x + RW / 2, y: ry + 25, fill: "#e8eaed", "font-size": 15, "font-weight": 700, "text-anchor": "middle" }, g).textContent = `Row ${i + 1}: ${r.kw} kW`;
-      E.rows.push({ sub: s("text", { x: x + RW / 2, y: ry + 45, fill: "#8b919c", "font-size": 12, "text-anchor": "middle" }, g) });
-    });
-    // heat table
-    heatWrap.replaceChildren(); const t = h("table", "mat heat");
-    t.append(h("tr", null, `<th>f fails &#8595; &nbsp; load on u &#8594;</th>` + us.map(u => `<th>${u}</th>`).join("")));
-    us.forEach((ff, a) => { const tr = h("tr"); tr.append(h("td", "lab", "f = " + ff)); const cells = us.map(() => { const td = h("td"); tr.append(td); return td; }); tr.onclick = () => { f = ff; update(step); }; tr.style.cursor = "pointer"; t.append(tr); E.heat.push(cells); });
+    for (let k = 0; k < SLOTS; k++) {
+      const g = s("g", { class: "rowslot" }, svg), x = rx(k);
+      const rect = s("rect", { x, y: ry, width: RW, height: RH, rx: 10, fill: "#171a1f", "stroke-width": 2 }, g);
+      const t1 = s("text", { x: x + RW / 2, y: ry + 23, fill: "#e8eaed", "font-size": 14, "font-weight": 700, "text-anchor": "middle" }, g);
+      const t2 = s("text", { x: x + RW / 2, y: ry + 42, fill: "#8b919c", "font-size": 11, "text-anchor": "middle" }, g);
+      g.style.cursor = "pointer"; g.onclick = () => { if (!rowsOfG(gsel)[k]) return; foc = foc === k ? null : k; update(step); };
+      E.rows.push({ g, rect, t1, t2 });
+    }
+    const t = h("table", "mat heat");
+    t.append(h("tr", null, `<th>f fails &#8595; &nbsp; load on u &#8594;</th>` + U.map(u => `<th>${u}</th>`).join("")));
+    U.forEach((ff, a) => { const tr = h("tr"); tr.append(h("td", "lab", "f = " + ff)); const cells = U.map(() => { const td = h("td"); tr.append(td); return td; }); tr.onclick = () => { f = ff; update(step); }; tr.style.cursor = "pointer"; t.append(tr); E.heat.push(cells); });
     heatWrap.append(t);
   }
+  build();
 
-  const ctrls = h("div", "controls");
-  const subs = () => [...subsetsOf(units(), 2), ...subsetsOf(units(), 4)];
-  const sels = rows.map((r, i) => { const l = ctl(ctrls, `Row ${i + 1} (${r.kw} kW) plugs into <select></select>`); const se = $("select", l); const fill = () => { se.replaceChildren(); subs().forEach(x => se.append(new Option((x.length === 2 ? "2-src " : "4-src ") + x, x))); se.value = r.sub; }; fill(); se.onchange = () => { r.sub = se.value; update(step); }; return { fill }; });
-  ctl(ctrls, 'UPS in group <select><option>4</option><option>5</option><option>6</option></select>').querySelector("select").onchange = e => { S.n = +e.target.value; if (!units().includes(f)) f = "A"; sels.forEach(x => x.fill()); rows.forEach(r => { if (!subs().includes(r.sub)) r.sub = "AB"; }); update(step); };
-  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+  const wrap = h("div", "stagewrap"); wrap.append(stage, h("div", "controls", "<span>Pairs and groups come from the earlier pages. Click a row to focus its lines.</span>"));
 
   const strip = mkStrip(
     tm(0, 0, `c = ${fr("1", "|s|")}`) +
@@ -744,22 +768,34 @@ const C = (() => {
     tm(3, 3, `max<sub>f</sub> max<sub>u&ne;f</sub> L<sub>f,u</sub>`), "small");
 
   const panel = makePanel("What happens when one UPS fails", "Coefficient c[s,f,u]: the share of a row's kW that lands on UPS u.", [
-    { at: 0, html: () => `A row plugs into a subset <span class="f">s</span> of the group's UPS (2 for 2-source, 4 for 4-source). Normally it shares its kW equally: <span class="f">c = 1/|s|</span>.<br><span class="note">${rows.map((r, i) => `Row ${i + 1}: ${r.kw} kW on ${r.sub} &rarr; ${fmt(r.kw / r.sub.length, 0)} each`).join("<br>")}</span>` },
-    { at: 1, html: () => `UPS <span class="v">${f}</span> fails (click any UPS to change). Rows plugged into it re-share among the <b>survivors</b>: <span class="f">1/(|s|&minus;1)</span> each. Rows not plugged into it are unchanged.` },
-    { at: 2, html: () => `Try every failure f. Cell [f,u] = load on u when f fails. Click a row to preview that failure.<br><span class="note">Total checks: n&times;(n&minus;1) = ${S.n * (S.n - 1)} cells per group.</span>` },
-    { at: 3, html: () => { const m = matrix().flat().filter(x => x != null); return `The group's <b>max-fail load</b> is the biggest cell:<br><span class="f">max<sub>f</sub> max<sub>u&ne;f</sub> &Sigma; kW &middot; c[s,f,u]</span><br><span class="big">= ${fmt(Math.max(...m), 1)} kW</span><br><span class="note">This is what evaluate_group_max_fail() returns, and what the optimiser pushes down.</span>`; } },
+    { at: 0, html: () => { const rs = rowsOfG(gsel); return `Group ${gsel + 1}: each row plugs into a subset <span class="f">s</span> of the 4 UPS. Normally it shares its kW equally: <span class="f">c = 1/|s|</span>.<br><span class="note">${rs.map(r => `<span class="dot" style="background:${ROWCOL[r.i % ROWCOL.length]}"></span>R${r.i + 1}: ${r.kw} kW on ${r.sub}`).join(" &nbsp; ")}</span>`; } },
+    { at: 1, html: () => `UPS <span class="v">${f}</span> fails (click any UPS to change). Rows plugged into it re-share among the <b>survivors</b>: <span class="f">1/(|s|&minus;1)</span> each. Other rows are unchanged.` },
+    { at: 2, html: () => `Try every failure f. Cell [f,u] = load on u when f fails. Click a row to preview that failure.<br><span class="note">4 &times; 3 = 12 cells per group.</span>` },
+    { at: 3, html: () => { const m = [0, 1, 2].map(maxFailG), M = Math.max(...m); return `Max-fail load of group ${gsel + 1}: <span class="big">${fmt(m[gsel], 0)} kW</span><br><span class="note">The hall's M is the worst group: ${fmt(M, 0)} kW. Change pairs on the Pairing page and watch it move.</span>`; } },
   ]);
 
   function update(st) {
-    step = st; if (builtN !== S.n) build();
-    const us = units(), fault = st >= 1 ? f : null, L = loads(fault), mx = Math.max(...Object.values(L), 1);
+    step = st;
+    const rs = rowsOfG(gsel), fault = st >= 1 ? f : null, L = loadsOf(rs, fault), mx = Math.max(...Object.values(L), 1);
+    tabEls.forEach((b, g) => { b.innerHTML = `<span class="dot" style="background:${COLORS[g]}"></span>Group ${g + 1} &middot; ${rowsOfG(g).length} rows`; b.classList.toggle("on", g === gsel); });
+    E.rows.forEach((o, k) => {
+      const r = rs[k]; o.g.style.opacity = r ? 1 : 0;
+      if (r) { o.t1.textContent = `R${r.i + 1} · ${r.kw} kW`; o.t2.textContent = `s = ${r.sub}`; o.rect.style.stroke = ROWCOL[r.i % ROWCOL.length]; o.t1.style.fill = ROWCOL[r.i % ROWCOL.length]; }
+      o.g.style.filter = foc === k ? "drop-shadow(0 0 8px rgba(255,255,255,.35))" : "none";
+    });
     E.links.forEach(lk => {
-      const r = rows[lk.i], member = r.sub.includes(lk.u), dead = fault === lk.u, affected = fault && r.sub.includes(fault);
-      const share = fault ? (r.sub.includes(fault) ? (dead ? 0 : 1 / (r.sub.length - 1)) : 1 / r.sub.length) : 1 / r.sub.length;
-      const col = dead ? "#fb7185" : affected ? "#f5a524" : COLORS[lk.i];
-      lk.line.style.opacity = member ? (dead ? .75 : .8) : 0; lk.line.style.stroke = col; lk.line.style.strokeWidth = dead ? 2 : 2 + share * 8; lk.line.style.strokeDasharray = dead ? "5 5" : "none";
-      lk.dot.style.opacity = member && !dead ? 1 : 0; lk.dot.style.fill = col;
-      lk.lg.style.opacity = member && !dead ? 1 : 0; lk.tx.textContent = fmt(share, 2); lk.tx.style.fill = affected ? "#f5a524" : "#8b919c"; lk.rect.style.stroke = affected ? "#f5a524" : "#333843";
+      const r = rs[lk.k], member = !!r && r.sub.includes(lk.u), dead = fault === lk.u, affected = !!(r && fault && r.sub.includes(fault));
+      const share = !r ? 0 : fault ? (r.sub.includes(fault) ? (dead ? 0 : 1 / (r.sub.length - 1)) : 1 / r.sub.length) : 1 / r.sub.length;
+      const col = dead ? "#fb7185" : r ? ROWCOL[r.i % ROWCOL.length] : "#fff";
+      const dim = foc != null && foc !== lk.k ? .1 : fault && !affected ? .32 : 1;
+      lk.line.style.opacity = member ? (dead ? .8 * dim : .9 * dim) : 0; lk.line.style.stroke = col;
+      lk.line.style.strokeWidth = dead ? 2 : 2 + share * 8 + (affected ? 2 : 0); lk.line.style.strokeDasharray = dead ? "5 5" : "none";
+      lk.line.style.filter = affected && !dead ? "drop-shadow(0 0 6px " + col + ")" : "none";
+      lk.dot.style.opacity = member && !dead ? dim : 0; lk.dot.style.fill = col; lk.am.setAttribute("dur", affected ? "0.7s" : "1.5s");
+      // label sits at a different spot along each line so chips never overlap
+      const idx = r ? [...r.sub].filter(x => x <= lk.u).length - 1 : 0, t = .36 + .13 * idx + .07 * (lk.k % 3), lx = lk.x1 + (lk.x2 - lk.x1) * t, ly = lk.y1 + (lk.y2 - lk.y1) * t;
+      $("rect", lk.lg).setAttribute("x", lx - 20); $("rect", lk.lg).setAttribute("y", ly - 10); lk.tx.setAttribute("x", lx); lk.tx.setAttribute("y", ly + 4);
+      lk.lg.style.opacity = member && !dead ? dim : 0; lk.tx.textContent = fmt(share, 2); lk.tx.style.fill = col; lk.rect.style.stroke = col;
     });
     E.ups.forEach(o => {
       const dead = fault === o.u;
@@ -769,16 +805,18 @@ const C = (() => {
       if (dead) { o.kw._v = null; o.kw.textContent = "FAILED"; } else tween(o.kw, L[o.u], v => fmt(v, 0) + " kW");
       const bh = dead ? 0 : 36 * L[o.u] / mx; o.bar.style.height = bh + "px"; o.bar.style.y = (uy + UH - 7 - bh) + "px";
     });
-    E.rows.forEach((o, i) => o.sub.textContent = `s = ${rows[i].sub}  (|s| = ${rows[i].sub.length})`);
     heatWrap.classList.toggle("on", st >= 2);
     if (st >= 2) {
-      const M = matrix(), mxv = Math.max(...M.flat().filter(x => x != null));
+      const M = matrixOf(rs), mxv = Math.max(...M.flat().filter(x => x != null));
       M.forEach((r, a) => r.forEach((v, b) => {
         const td = E.heat[a][b]; td.className = v == null ? "diag" : (st >= 3 && Math.abs(v - mxv) < 1e-9 ? "max" : "");
         if (v == null) { td.textContent = "-"; td.style.background = ""; } else { td.textContent = fmt(v, 0); td.style.background = `rgba(245,165,36,${.08 + .55 * v / mxv})`; td.style.color = "#e8eaed"; }
-        if (us[a] === f) td.style.boxShadow = "inset 0 0 0 1px rgba(255,255,255,.18)"; else td.style.boxShadow = "";
+        td.style.boxShadow = U[a] === f ? "inset 0 0 0 1px rgba(255,255,255,.18)" : "";
       }));
     }
+    const mfs = [0, 1, 2].map(maxFailG), MM = Math.max(...mfs);
+    gsum.classList.toggle("on", st >= 3);
+    gsum.innerHTML = mfs.map((v, g) => `<span class="${g === gsel ? "sel" : ""}${Math.abs(v - MM) < 1e-9 ? " top" : ""}"><i style="background:${COLORS[g]}"></i>G${g + 1} max-fail <b>${fmt(v, 0)}</b></span>`).join("") + `<span class="mm">M = <b>${fmt(MM, 0)} kW</b></span>`;
     strip.upd(st); panel.update(st);
   }
   return { id: "fail", name: "Failure c[s,f,u]", steps: ["Normal share", "One UPS fails", "Try every f", "Max-fail load"], nodes: [strip, wrap, panel], update };
@@ -1230,7 +1268,7 @@ const PM = (() => {
   const rowEl = [];
   S.P.forEach((p, i) => {
     const tr = h("tr"), o = { tr, cells: [] };
-    tr.append(h("td", "lab", "R" + (i + 1)));
+    { const lb = h("td", "lab", "R" + (i + 1)); lb.style.color = ROWCOL[i % ROWCOL.length]; lb.style.fontWeight = "700"; tr.append(lb); }
     o.kw = h("td", null, p); tr.append(o.kw);
     o.grp = h("td"); tr.append(o.grp);
     o.src = h("td"); o.src.style.cursor = "pointer"; o.src.onclick = () => { if (step < 1) return; S.src[i] = S.src[i] === 2 ? 4 : 2; S.pair[i] = S.src[i] === 4 ? QUAD : "AB"; update(step); }; tr.append(o.src);
@@ -1246,21 +1284,18 @@ const PM = (() => {
   mkBtn("Random", () => { S.src = S.src.map(() => 2); S.pair = S.P.map(() => PAIRS[Math.floor(Math.random() * 6)]); update(step); });
   mkBtn("Toggle 4-source on R3", () => { S.src[2] = S.src[2] === 2 ? 4 : 2; S.pair[2] = S.src[2] === 4 ? QUAD : "AB"; update(step); });
 
-  const chips = h("div", "fchips");
-  const chipEls = U.map(u => { const b = h("button", null, `UPS ${u} fails`); b.onclick = () => { f = u; update(step); }; chips.append(b); return b; });
   const pgrid = h("div", "pgrid");
   const cards = [0, 1, 2].map(g => {
     const c = h("div", "pgc"); c.append(h("h4", null, `<span class="dot" style="background:${COLORS[g]}"></span><span class="gt"></span>`));
     const ubs = h("div", "ubs"), cols = U.map(u => { const col = h("div", "ucol", `<div class="val"></div><div class="bar"></div><div class="nm">${u}</div>`); ubs.append(col); return { col, val: $(".val", col), bar: $(".bar", col) }; });
     const mf = h("div", "tagr"); c.append(ubs, mf); pgrid.append(c); return { c, cols, mf, gt: $(".gt", c) };
   });
-  const msum = h("div", "msum");
-  const stage = h("div", "stage top"); stage.append(btns, tbl, chips, pgrid, msum);
+  const stage = h("div", "stage top"); stage.append(btns, tbl, pgrid);
   const wrap = h("div", "stagewrap"); wrap.append(stage, h("div", "controls", "<span>Click a cell to choose that row's UPS pair.</span>"));
 
   const strip = mkStrip(
     tm(0, 0, `y<sub>i,g</sub>`) + tm(1, 1, `q<sub>i,g,p</sub> &isin; {0,1}`) + tm(2, 2, `${sig("", "p")} q<sub>i,g,p</sub> = y<sub>i,g</sub>`) +
-    tm(3, 3, `L<sub>g,u</sub> = ${sig("", "i,p&ni;u")} ${fr("kW<sub>i</sub>", "|p|")} q<sub>i,g,p</sub>`) + tm(4, 4, `L<sub>g,f,u</sub> = ${sig("", "i,p")} c<sub>p,f,u</sub> &middot; kW<sub>i</sub> &middot; q<sub>i,g,p</sub>`));
+    tm(3, 3, `L<sub>g,u</sub> = ${sig("", "i,p&ni;u")} ${fr("kW<sub>i</sub>", "|p|")} q<sub>i,g,p</sub>`));
 
   const combos = () => { let n = 1n; S.src.forEach(s2 => { if (s2 === 2) n *= 6n; }); return n; };
   const panel = makePanel("Which UPS pair does each row use?", "Binary q[i,g,p]: one pair per row, chosen after the groups are fixed.", [
@@ -1268,7 +1303,6 @@ const PM = (() => {
     { at: 1, html: () => `A 2-source row plugs into <b>2 of the 4 UPS</b>: C(4,2) = 6 pairs. Binary <span class="f">q[i,g,p] = 1</span> means "row i, in group g, uses pair p". A 4-source row plugs into all four (ABCD). <b>Click any cell</b> to choose.` },
     { at: 2, html: () => `Each row uses exactly one pair: <span class="f">&Sigma;<sub>p</sub> q[i,g,p] = y[i,g]</span>.<br>The row's own group has y = 1, so one q is 1. Every other group has y = 0, so all its q are 0. <span class="note">${combos().toLocaleString("en-US")} pairing combinations for this layout.</span>` },
     { at: 3, html: () => `Normally a row shares its kW equally across its pair, so each UPS carries the sum of its halves. Bars show the load on each UPS, per group.` },
-    { at: 4, html: () => { const m = [0, 1, 2].map(maxFail), M = Math.max(...m); return `UPS <span class="v">${f}</span> fails (click a chip). Its rows move to their partner: <span class="f">c = 1/(|s|&minus;1)</span>.<br>Worst case per group: ${m.map((v, g) => `<span class="dot" style="background:${COLORS[g]}"></span>${fmt(v, 0)}`).join(" &nbsp; ")} kW &rarr; <b>M = ${fmt(M, 0)} kW</b>.<br><span class="note">Try "All rows on AB" versus "Best pairing".</span>`; } },
   ]);
 
   function update(st) {
@@ -1286,21 +1320,17 @@ const PM = (() => {
     });
     // reveal columns by step
     $$("tr", tbl).forEach(tr => [...tr.children].forEach((c, k) => { const q = k >= 4 && k <= 10, extra = k === 11; c.classList.toggle("hid", (k === 2 && st < 0) || (q && st < 1) || (extra && st < 2) || (k === 3 && st < 1)); }));
-    chips.classList.toggle("on", st >= 4);
-    chipEls.forEach((b, k) => b.classList.toggle("on", U[k] === f));
-    const showBars = st >= 3, fault = st >= 4 ? f : null;
+    const showBars = st >= 3, fault = null;
     const all = [0, 1, 2].map(g => loadsGroup(g, fault)), mxv = Math.max(1, ...all.map(L => Math.max(...Object.values(L))));
     cards.forEach((cd, g) => {
       cd.c.classList.toggle("on", showBars);
       const L = all[g]; cd.gt.innerHTML = `Group ${g + 1} &middot; ${rowsOf(g).length} rows &middot; ${sum(rowsOf(g).map(o => o.kw))} kW`;
       U.forEach((u, k) => { const c = cd.cols[k], dead = fault === u; c.col.classList.toggle("dead", dead); c.bar.style.height = dead ? "6px" : (L[u] / mxv * 100) + "%"; c.val.textContent = dead ? "✕" : fmt(L[u], 0); });
-      cd.mf.innerHTML = st >= 4 ? `worst case over any failure: <b style="color:var(--amber)">${fmt(maxFail(g), 0)} kW</b>` : "";
+      cd.mf.innerHTML = `normal total: <b style="color:var(--amber)">${fmt(sum(rowsOf(g).map(o => o.kw)), 0)} kW</b> over 4 UPS`;
     });
-    const M = Math.max(...[0, 1, 2].map(maxFail));
-    msum.classList.toggle("on", st >= 4); msum.innerHTML = `M = max over groups = <b>${fmt(M, 0)} kW</b>`;
     strip.upd(st); panel.update(st);
   }
-  return { id: "pairing", name: "Pairing q", steps: ["Rows & groups", "Binary q", "One pair per row", "Normal load", "UPS fails"], nodes: [strip, wrap, panel], update };
+  return { id: "pairing", name: "Pairing q", steps: ["Rows & groups", "Binary q", "One pair per row", "Normal load"], nodes: [strip, wrap, panel], update };
 })();
 
 // keep the dots refreshed after "New rows"
