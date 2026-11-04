@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Hall Math Visualizer</title>
+<style>
+:root{
+  --bg:#0a0b0d; --panel:#121418; --panel2:#171a1f; --line:#262a31; --line2:#333843;
+  --text:#e8eaed; --mute:#8b919c; --dim:#5b616c;
+  --amber:#f5a524; --teal:#2dd4bf; --sky:#60a5fa; --rose:#fb7185; --lime:#a3e635; --violet:#a78bfa;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
+  --sans:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{
+  background:
+    radial-gradient(1200px 600px at 70% -10%,#16181d 0%,transparent 60%),
+    linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px) 0 0/48px 48px,
+    linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px) 0 0/48px 48px,
+    var(--bg);
+  color:var(--text);font-family:var(--sans);display:flex;flex-direction:column;overflow:hidden;
+}
+header{display:flex;align-items:center;gap:28px;padding:14px 28px;border-bottom:1px solid var(--line);background:rgba(10,11,13,.8);backdrop-filter:blur(6px)}
+.brand{font-weight:700;letter-spacing:.04em;font-size:15px;color:var(--amber);white-space:nowrap}
+.brand small{color:var(--mute);font-weight:500;margin-left:8px;letter-spacing:0}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav button{background:none;border:1px solid transparent;color:var(--mute);font:600 14px var(--sans);padding:8px 14px;border-radius:8px;cursor:pointer;transition:.2s}
+nav button:hover{color:var(--text);background:var(--panel)}
+nav button.on{color:var(--text);background:var(--panel2);border-color:var(--line2)}
+nav button b{color:var(--amber);margin-right:6px;font-family:var(--mono)}
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,1fr);gap:20px;padding:20px 28px}
+.module{display:none;grid-column:1/3;grid-template-columns:subgrid;gap:20px;min-height:0}
+.module.on{display:grid}
+.stagewrap{display:flex;flex-direction:column;gap:14px;min-height:0}
+.stage{flex:1;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 16px;font-size:13px;color:var(--mute)}
+.controls label{display:flex;align-items:center;gap:8px}
+.controls output{color:var(--text);font-family:var(--mono);min-width:44px}
+.controls button,.controls select{background:var(--panel2);color:var(--text);border:1px solid var(--line2);border-radius:7px;padding:6px 12px;font:600 13px var(--sans);cursor:pointer}
+.controls button:hover{border-color:var(--amber)}
+.controls button.on{background:var(--amber);color:#111;border-color:var(--amber)}
+input[type=range]{accent-color:var(--amber);width:150px}
+aside{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+aside h2{font-size:22px;margin-bottom:2px}
+aside .sub{color:var(--mute);font-size:14px;margin-bottom:14px}
+.line{opacity:0;transform:translateY(8px);transition:opacity .45s,transform .45s;max-height:0;overflow:hidden;font-size:16px;line-height:1.6;border-left:3px solid var(--line2);padding-left:14px;margin:0}
+.line.on{opacity:1;transform:none;max-height:600px;margin:7px 0}
+.line.cur{border-left-color:var(--amber)}
+.line.flash{animation:flash .6s}
+@keyframes flash{from{background:rgba(245,165,36,.18)}to{background:transparent}}
+.f{font-family:var(--mono);color:var(--amber)}
+.v{font-family:var(--mono);color:var(--text);font-weight:700}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:baseline}
+.note{color:var(--mute);font-size:14px}
+.big{font-size:28px;font-family:var(--mono);font-weight:700;color:var(--amber)}
+footer{display:flex;align-items:center;gap:18px;padding:12px 28px;border-top:1px solid var(--line);background:rgba(10,11,13,.8)}
+footer button{background:var(--panel2);border:1px solid var(--line2);color:var(--text);font:600 14px var(--sans);padding:9px 18px;border-radius:9px;cursor:pointer}
+footer button:hover{border-color:var(--amber)}
+.dots{display:flex;gap:8px;flex:1;justify-content:center;align-items:center}
+.dots span{font-size:12px;color:var(--dim);padding:5px 10px;border-radius:20px;border:1px solid var(--line);cursor:pointer;transition:.2s}
+.dots span.done{color:var(--mute);border-color:var(--line2)}
+.dots span.cur{background:var(--amber);color:#111;border-color:var(--amber);font-weight:700}
+.hint{color:var(--dim);font-size:12px;white-space:nowrap}
+/* SVG hall */
+svg text{font-family:var(--sans)}
+.rack rect.body{transition:fill .4s,stroke .4s,fill-opacity .4s;cursor:pointer}
+.rack:hover rect.body{stroke:var(--amber)!important}
+.rack text{pointer-events:none}
+.cut{opacity:0;transition:opacity .35s}
+.cut.on{opacity:1}
+.cut line{stroke:var(--amber);stroke-width:3;stroke-dasharray:8 6;animation:dash 1s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-14}}
+.hit{fill:transparent;cursor:pointer}
+.hit:hover+.ghost{opacity:.6}
+.ghost{stroke:var(--amber);stroke-width:2;stroke-dasharray:3 6;opacity:0;transition:.2s;pointer-events:none}
+.pill{transition:opacity .4s}
+/* pipeline */
+.pipe{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;justify-content:center}
+.card{flex:1;min-width:130px;max-width:210px;background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:14px 14px;opacity:.12;transform:translateY(10px) scale(.97);transition:.5s}
+.card.on{opacity:1;transform:none}
+.card.cur{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 8px 30px rgba(245,165,36,.12)}
+.card .l{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.08em}
+.card .n{font:700 28px var(--mono);margin:6px 0 2px}
+.card .u{font-size:13px;color:var(--mute)}
+.arrow{align-self:center;color:var(--dim);font-size:20px}
+/* ups blocks */
+.blocks{display:flex;flex-direction:column;gap:12px;margin-top:22px}
+.brow{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.brow .tag{width:84px;font-size:12px;color:var(--mute)}
+.unit{width:54px;height:62px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);display:flex;flex-direction:column;align-items:center;justify-content:center;font:600 11px var(--mono);color:var(--dim);opacity:0;transform:scale(.6);transition:.4s}
+.unit.on{opacity:1;transform:none}
+.unit.act{background:rgba(245,165,36,.16);border-color:var(--amber);color:var(--amber)}
+.unit.spare{background:rgba(45,212,191,.12);border-color:var(--teal);color:var(--teal);border-style:dashed}
+.unit i{display:block;width:26px;height:3px;background:currentColor;opacity:.5;margin:2px 0;border-radius:2px}
+.util{margin-top:20px;opacity:0;transition:.5s}
+.util.on{opacity:1}
+.bar{height:14px;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;overflow:hidden;margin-top:6px}
+.bar>div{height:100%;background:linear-gradient(90deg,var(--teal),var(--amber));transition:width .6s}
+/* chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:24px;opacity:0;transition:.5s}
+.chips.on{opacity:1}
+.chip{font:600 14px var(--mono);padding:8px 12px;border-radius:8px;border:1px solid var(--line2);color:var(--dim);transition:.4s}
+.chip.low{color:var(--mute);background:var(--panel2)}
+.chip.pick{background:var(--amber);color:#111;border-color:var(--amber);transform:scale(1.2);box-shadow:0 0 24px rgba(245,165,36,.4)}
+.chip.mark{border-color:var(--teal);color:var(--teal)}
+/* binary */
+.bits{display:flex;gap:10px;justify-content:center}
+.bit{width:92px;text-align:center}
+.bit .w{height:22px;font:600 14px var(--mono);color:var(--mute);opacity:0;transition:.4s}
+.bit .w.on{opacity:1}
+.bit button{width:92px;height:116px;border-radius:12px;border:1px solid var(--line2);background:var(--panel2);color:var(--dim);font:700 54px var(--mono);cursor:pointer;transition:.25s;margin:8px 0}
+.bit button.one{background:rgba(245,165,36,.16);border-color:var(--amber);color:var(--amber);box-shadow:0 0 28px rgba(245,165,36,.2)}
+.bit button:hover{transform:translateY(-3px)}
+.bit .c{height:24px;font:600 15px var(--mono);color:var(--text);opacity:0;transition:.4s}
+.bit .c.on{opacity:1}
+.bit .p{font-size:11px;color:var(--dim);font-family:var(--mono)}
+.sumrow{margin-top:26px;text-align:center;opacity:0;transition:.5s}
+.sumrow.on{opacity:1}
+.sumrow .big{font-size:56px}
+@media (max-width:1100px){main{grid-template-columns:1fr}.module{grid-column:1}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">DATA HALL MATH<small>visual explainer</small></div>
+  <nav id="nav"></nav>
+</header>
+<main id="main"></main>
+<footer>
+  <button id="prev">&larr; Back</button>
+  <div class="dots" id="dots"></div>
+  <span class="hint">&larr; &rarr; step &nbsp;|&nbsp; 1-4 module &nbsp;|&nbsp; F fullscreen</span>
+  <button id="next">Next &rarr;</button>
+</footer>
+
+<script>
+"use strict";
+/* ---------- helpers ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const NS = "http://www.w3.org/2000/svg";
+const s = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const fmt = (n, d = 1) => (+n.toFixed(d)).toLocaleString("en-US", { maximumFractionDigits: d });
+const COLORS = ["#f5a524", "#2dd4bf", "#60a5fa", "#fb7185", "#a3e635", "#a78bfa"];
+const letter = i => i < 26 ? String.fromCharCode(65 + i) : "A" + String.fromCharCode(65 + i - 26);
+
+/* Right-hand explanation panel: lines appear as steps advance. */
+function makePanel(title, sub, lines) {
+  const aside = h("aside");
+  aside.append(h("h2", null, title), h("div", "sub", sub));
+  const els = lines.map(L => { const e = h("div", "line"); e._at = L.at; e._fn = L.html; e._last = ""; aside.append(e); return e; });
+  aside.update = step => {
+    els.forEach(e => {
+      const html = e._fn();
+      if (html !== e._last) { e.innerHTML = html; if (e._last && e.classList.contains("on")) { e.classList.remove("flash"); void e.offsetWidth; e.classList.add("flash"); } e._last = html; }
+      e.classList.toggle("on", step >= e._at);
+      e.classList.toggle("cur", step === e._at);
+    });
+  };
+  return aside;
+}
+/* Pipeline of cards that reveal one by one. */
+function makePipe(cards) {
+  const root = h("div", "pipe");
+  const els = [];
+  cards.forEach((c, i) => {
+    if (i) { const a = h("div", "arrow", "&rarr;"); a._at = c.at; a.style.transition = ".5s"; root.append(a); els.push(a); }
+    const e = h("div", "card"); e._c = c; e.innerHTML = '<div class="l"></div><div class="n"></div><div class="u"></div>'; root.append(e); els.push(e);
+  });
+  root.update = step => els.forEach(e => {
+    if (e._c) { const c = e._c; $(".l", e).textContent = c.label; $(".n", e).textContent = c.value(); $(".u", e).textContent = c.unit(); e.classList.toggle("on", step >= c.at); e.classList.toggle("cur", step === c.at); }
+    else e.style.opacity = step >= e._at ? 1 : 0.1;
+  });
+  return root;
+}
+function ctl(parent, html) { const l = h("label", null, html); parent.append(l); return l; }
+
+/* =========================================================
+   MODULE 1  -  Data hall, cut lines, group load
+   ========================================================= */
+const M1 = (() => {
+  const R = 4, C = 8, CW = 72, CH = 64, GX = 14, GY = 30, X0 = 56, Y0 = 86;
+  const VALS = [2, 4, 6, 8, 10, 12, 15, 20];
+  const kw = [[8, 8, 10, 10, 6, 6, 12, 12], [8, 10, 10, 8, 6, 8, 12, 15], [4, 6, 8, 8, 10, 10, 8, 6], [4, 4, 6, 8, 10, 12, 10, 8]];
+  const cutV = new Set([3]), cutH = new Set([1]);
+  let df = 0.8, step = 0;
+  const colX = c => X0 + c * (CW + GX), rowY = r => Y0 + r * (CH + GY);
+  const W = colX(C - 1) + CW + X0, H = rowY(R - 1) + CH + 66;
+
+  function bands(cuts, n) { const b = []; let k = 0; for (let i = 0; i < n; i++) { b.push(k); if (cuts.has(i)) k++; } return { b, n: k + 1 }; }
+  function calc() {
+    const cb = bands(cutV, C), rb = bands(cutH, R);
+    const groups = Array.from({ length: cb.n * rb.n }, (_, id) => ({ id, letter: letter(id), color: COLORS[id % COLORS.length], vals: [], sum: 0, c0: 99, c1: -1, r0: 99, r1: -1 }));
+    for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+      const g = groups[rb.b[r] * cb.n + cb.b[c]];
+      g.vals.push(kw[r][c]); g.sum += kw[r][c];
+      g.c0 = Math.min(g.c0, c); g.c1 = Math.max(g.c1, c); g.r0 = Math.min(g.r0, r); g.r1 = Math.max(g.r1, r);
+    }
+    const total = groups.reduce((a, g) => a + g.sum, 0);
+    return { cb, rb, groups, total, design: total * df };
+  }
+
+  const stage = h("div", "stage");
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", style: "max-height:100%" }); stage.append(svg);
+  s("text", { x: X0, y: 28, fill: "#8b919c", "font-size": 15, "font-weight": 600, "letter-spacing": ".08em" }, svg).textContent = "DATA HALL 1  -  32 RACKS";
+  for (let c = 0; c < C; c++) s("text", { x: colX(c) + CW / 2, y: Y0 - 28, fill: "#5b616c", "font-size": 12, "text-anchor": "middle" }, svg).textContent = "C" + (c + 1);
+  for (let r = 0; r < R; r++) s("text", { x: X0 - 18, y: rowY(r) + CH / 2 + 4, fill: "#5b616c", "font-size": 12, "text-anchor": "middle" }, svg).textContent = "R" + (r + 1);
+
+  const rackEls = [];
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    const g = s("g", { class: "rack" }, svg);
+    const body = s("rect", { class: "body", x: colX(c), y: rowY(r), width: CW, height: CH, rx: 7, fill: "#171a1f", stroke: "#2c3038", "stroke-width": 1.5 }, g);
+    for (let k = 0; k < 4; k++) s("rect", { x: colX(c) + 10, y: rowY(r) + 8 + k * 4, width: CW - 20, height: 1.6, fill: "#fff", opacity: .09 }, g);
+    const t = s("text", { x: colX(c) + CW / 2, y: rowY(r) + 42, fill: "#e8eaed", "font-size": 20, "font-weight": 700, "text-anchor": "middle" }, g);
+    const u = s("text", { x: colX(c) + CW / 2, y: rowY(r) + 57, fill: "#8b919c", "font-size": 10, "text-anchor": "middle" }, g); u.textContent = "kW";
+    body.addEventListener("click", () => { const v = kw[r][c]; kw[r][c] = VALS.find(x => x > v) || VALS[0]; update(step); });
+    rackEls.push({ r, c, body, t });
+  }
+
+  const cuts = [];
+  for (let c = 0; c < C - 1; c++) {
+    const x = colX(c) + CW + GX / 2, g = s("g", {}, svg), y1 = Y0 - 14, y2 = rowY(R - 1) + CH + 14;
+    s("rect", { class: "hit", x: x - 10, y: y1, width: 20, height: y2 - y1 }, g);
+    s("line", { class: "ghost", x1: x, x2: x, y1, y2 }, g);
+    const on = s("g", { class: "cut" }, g); s("line", { x1: x, x2: x, y1, y2 }, on);
+    g.addEventListener("click", () => { if (step < 1) return; cutV.has(c) ? cutV.delete(c) : cutV.add(c); update(step); });
+    cuts.push({ on, g, kind: "v", i: c });
+  }
+  for (let r = 0; r < R - 1; r++) {
+    const y = rowY(r) + CH + GY / 2, g = s("g", {}, svg), x1 = X0 - 14, x2 = colX(C - 1) + CW + 14;
+    s("rect", { class: "hit", x: x1, y: y - 10, width: x2 - x1, height: 20 }, g);
+    s("line", { class: "ghost", x1, x2, y1: y, y2: y }, g);
+    const on = s("g", { class: "cut" }, g); s("line", { x1, x2, y1: y, y2: y }, on);
+    g.addEventListener("click", () => { if (step < 1) return; cutH.has(r) ? cutH.delete(r) : cutH.add(r); update(step); });
+    cuts.push({ on, g, kind: "h", i: r });
+  }
+  const pills = s("g", {}, svg);
+  s("text", { x: W / 2, y: H - 16, fill: "#5b616c", "font-size": 13, "text-anchor": "middle", id: "m1hint" }, svg);
+
+  const ctrls = h("div", "controls");
+  ctl(ctrls, 'Demand factor <input type="range" min="0.5" max="1" step="0.05" value="0.8"> <output>0.80</output>').querySelector("input").oninput = e => { df = +e.target.value; e.target.nextElementSibling.textContent = df.toFixed(2); update(step); };
+  const b1 = h("button", null, "Preset cuts"); b1.onclick = () => { cutV.clear(); cutH.clear(); cutV.add(3); cutH.add(1); update(step); };
+  const b2 = h("button", null, "Clear cuts"); b2.onclick = () => { cutV.clear(); cutH.clear(); update(step); };
+  const b3 = h("button", null, "Randomize kW"); b3.onclick = () => { for (const row of kw) for (let c = 0; c < C; c++) row[c] = VALS[Math.floor(Math.random() * 6)]; update(step); };
+  ctrls.append(b1, b2, b3);
+
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const panel = makePanel("Group the hall, sum the load", "Cut the hall into zones; each zone's load is the sum of its racks.", [
+    { at: 0, html: () => { const k = calc(); return `Every rack draws power in <b>kW</b>. Click a rack to change it.<br><span class="note">All 32 racks together: <span class="v">${fmt(k.total)} kW</span></span>`; } },
+    { at: 1, html: () => { const k = calc(); return `Click the <span class="f">gaps</span> to place <b>cut lines</b> (amber). Cuts split the hall into <span class="v">${k.groups.length}</span> group${k.groups.length > 1 ? "s" : ""}.<br><span class="note">Think: PDU zones, UPS feeds, cooling zones.</span>`; } },
+    { at: 2, html: () => { const k = calc(); return "Each region becomes a group:<br>" + k.groups.map(g => `<span class="dot" style="background:${g.color}"></span>Group <b>${g.letter}</b> &mdash; ${g.vals.length} racks`).join("<br>"); } },
+    { at: 3, html: () => { const k = calc(); return "Sum the racks in each group:<br>" + k.groups.map(g => `<span class="dot" style="background:${g.color}"></span><span class="f">${g.letter}</span> = ${g.vals.length <= 6 ? g.vals.join(" + ") : "&Sigma; " + g.vals.length + " racks"} = <span class="v">${fmt(g.sum)} kW</span>`).join("<br>"); } },
+    { at: 4, html: () => { const k = calc(); return `Not every rack peaks together, so apply a <b>demand factor</b>:<br><span class="f">${fmt(k.total)} kW &times; ${df.toFixed(2)}</span><br><span class="big">= ${fmt(k.design)} kW</span><br><span class="note">This design load feeds the UPS sizing next.</span>`; } },
+  ]);
+
+  function update(st) {
+    step = st;
+    const k = calc();
+    M1.design = k.design;
+    rackEls.forEach(({ r, c, body, t }) => {
+      t.textContent = kw[r][c];
+      const g = k.groups[k.rb.b[r] * k.cb.n + k.cb.b[c]];
+      if (st >= 2) { body.setAttribute("fill", g.color); body.setAttribute("fill-opacity", ".22"); body.setAttribute("stroke", g.color); }
+      else { body.setAttribute("fill", "#171a1f"); body.setAttribute("fill-opacity", "1"); body.setAttribute("stroke", "#2c3038"); }
+    });
+    cuts.forEach(ct => {
+      ct.on.classList.toggle("on", st >= 1 && (ct.kind === "v" ? cutV : cutH).has(ct.i));
+      ct.g.style.pointerEvents = st >= 1 ? "auto" : "none";
+    });
+    pills.replaceChildren();
+    if (st >= 3) k.groups.forEach(g => {
+      const cx = (colX(g.c0) + colX(g.c1) + CW) / 2, cy = (rowY(g.r0) + rowY(g.r1) + CH) / 2;
+      const txt = `${g.letter}  =  ${fmt(g.sum)} kW`, w = txt.length * 8.6 + 20;
+      const p = s("g", { class: "pill" }, pills);
+      s("rect", { x: cx - w / 2, y: cy - 14, width: w, height: 28, rx: 14, fill: "#0a0b0d", stroke: g.color, "stroke-width": 2 }, p);
+      s("text", { x: cx, y: cy + 5, fill: g.color, "font-size": 15, "font-weight": 700, "text-anchor": "middle" }, p).textContent = txt;
+    });
+    $("#m1hint").textContent = st === 0 ? "Click any rack to change its kW" : st === 1 ? "Click a gap between racks to add / remove a cut line" : "";
+    panel.update(st);
+  }
+  return { id: "hall", name: "Group & load", steps: ["Rack loads", "Cut lines", "Groups", "Sum per group", "Demand factor"], nodes: [wrap, panel], update, design: 0 };
+})();
+
+/* =========================================================
+   MODULE 2  -  UPS sizing
+   ========================================================= */
+const M2 = (() => {
+  const P = { load: 200, linked: true, margin: 0.2, pf: 0.9, unit: 100, red: "N+1" };
+  let step = 0;
+  const calc = () => {
+    const design = P.load * (1 + P.margin), kva = design / P.pf, n = Math.ceil(kva / P.unit);
+    const total = P.red === "N" ? n : P.red === "N+1" ? n + 1 : 2 * n;
+    return { design, kva, n, total, usable: n * P.unit, util: kva / (n * P.unit) };
+  };
+  const pipe = makePipe([
+    { at: 0, label: "IT load", value: () => fmt(P.load, 0), unit: () => "kW" },
+    { at: 1, label: "With growth", value: () => fmt(calc().design, 0), unit: () => `kW  (+${P.margin * 100}%)` },
+    { at: 2, label: "Apparent power", value: () => fmt(calc().kva, 0), unit: () => `kVA  (PF ${P.pf})` },
+    { at: 3, label: "Modules (N)", value: () => calc().n, unit: () => `x ${P.unit} kVA` },
+    { at: 4, label: "Installed", value: () => calc().total, unit: () => `modules  (${P.red})` },
+  ]);
+  const blocks = h("div", "blocks");
+  const util = h("div", "util", '<div class="note" id="utxt"></div><div class="bar"><div id="ubar" style="width:0"></div></div>');
+  const stage = h("div", "stage"); stage.append(pipe, blocks, util);
+
+  const ctrls = h("div", "controls");
+  const lr = ctl(ctrls, 'IT load <input type="range" min="20" max="2000" step="10"> <output></output> kW');
+  lr.querySelector("input").oninput = e => { P.load = +e.target.value; P.linked = false; update(step); };
+  const link = h("button", null, "Use hall load"); link.onclick = () => { P.linked = true; update(step); }; ctrls.append(link);
+  const sel = (label, key, opts, fmtv) => { const l = ctl(ctrls, label + ' <select></select>'), se = l.querySelector("select"); opts.forEach(o => se.append(new Option(fmtv(o), o))); se.value = P[key]; se.onchange = () => { P[key] = isNaN(+se.value) ? se.value : +se.value; update(step); }; };
+  sel("Margin", "margin", [0, 0.1, 0.2, 0.25], v => v * 100 + "%");
+  sel("PF", "pf", [0.8, 0.9, 0.95, 1], v => v);
+  sel("Module", "unit", [50, 100, 150, 200, 250, 300, 500], v => v + " kVA");
+  sel("Redundancy", "red", ["N", "N+1", "2N"], v => v);
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const panel = makePanel("Sizing the UPS", "From IT load to the number of UPS modules.", [
+    { at: 0, html: () => `Start from the hall's design load: <span class="v">${fmt(P.load, 0)} kW</span>${P.linked ? ' <span class="note">(linked to module 1)</span>' : ""}` },
+    { at: 1, html: () => `Leave room to grow:<br><span class="f">${fmt(P.load, 0)} &times; (1 + ${P.margin})</span> = <span class="v">${fmt(calc().design, 0)} kW</span>` },
+    { at: 2, html: () => `UPS is rated in kVA, so divide by power factor:<br><span class="f">S = P / PF = ${fmt(calc().design, 0)} / ${P.pf}</span> = <span class="v">${fmt(calc().kva, 0)} kVA</span>` },
+    { at: 3, html: () => `How many ${P.unit} kVA modules carry it?<br><span class="f">N = &lceil;${fmt(calc().kva, 0)} / ${P.unit}&rceil;</span> = <span class="v">${calc().n}</span><br><span class="note">Usable: ${calc().n * P.unit} kVA &middot; utilization ${fmt(calc().util * 100, 0)}%</span>` },
+    { at: 4, html: () => { const c = calc(); const why = P.red === "N" ? "No spare: any failure drops capacity." : P.red === "N+1" ? "One spare module survives a single failure." : "Two full independent systems (A + B)."; return `Redundancy <b>${P.red}</b>: ${why}<br><span class="big">${c.total} modules</span>`; } },
+  ]);
+
+  function update(st) {
+    step = st;
+    if (P.linked) P.load = Math.min(2000, Math.max(20, Math.round(M1.design / 10) * 10));
+    const c = calc(), rg = $("input", lr);
+    rg.value = P.load; $("output", lr).textContent = fmt(P.load, 0);
+    link.classList.toggle("on", P.linked);
+    blocks.replaceChildren();
+    const mk = (cls, label) => { const u = h("div", "unit " + cls, `<i></i><i></i>${label}`); if (st >= (cls === "spare" ? 4 : 3)) requestAnimationFrame(() => u.classList.add("on")); return u; };
+    const row = (tag, n, nAct, spareCls) => { const r = h("div", "brow", `<div class="tag">${tag}</div>`); for (let i = 0; i < n; i++) r.append(mk(i < nAct ? "act" : "spare", P.unit)); blocks.append(r); };
+    if (P.red === "2N") { row("System A", c.n, c.n); if (st >= 4) row("System B", c.n, c.n); else blocks.append(h("div", "brow")); }
+    else row("UPS bank", P.red === "N" ? c.n : c.n + 1, c.n);
+    if (P.red === "2N" && st >= 4) blocks.querySelectorAll(".brow:nth-child(2) .unit").forEach(u => { u.className = "unit on spare"; });
+    util.classList.toggle("on", st >= 3);
+    $("#utxt").textContent = `Utilization of N modules: ${fmt(c.util * 100, 0)}%  (${fmt(c.kva, 0)} of ${c.usable} kVA)`;
+    $("#ubar").style.width = Math.min(100, c.util * 100) + "%";
+    pipe.update(st); panel.update(st);
+  }
+  return { id: "ups", name: "UPS sizing", steps: ["IT load", "Growth margin", "kW to kVA", "Module count", "Redundancy"], nodes: [wrap, panel], update };
+})();
+
+/* =========================================================
+   MODULE 3  -  Load -> current -> breaker
+   ========================================================= */
+const M3 = (() => {
+  const P = { kw: 120, v: 400, pf: 0.95 };
+  const STD = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600];
+  let step = 0;
+  const calc = () => { const kva = P.kw / P.pf, amps = kva * 1000 / (Math.sqrt(3) * P.v), need = amps * 1.25, br = STD.find(x => x >= need) || STD[STD.length - 1]; return { kva, amps, need, br }; };
+  const pipe = makePipe([
+    { at: 0, label: "Load", value: () => fmt(P.kw, 0), unit: () => "kW" },
+    { at: 1, label: "Apparent", value: () => fmt(calc().kva, 1), unit: () => `kVA  (PF ${P.pf})` },
+    { at: 2, label: "Line current", value: () => fmt(calc().amps, 0), unit: () => `A  (${P.v} V, 3-phase)` },
+    { at: 3, label: "Continuous x1.25", value: () => fmt(calc().need, 0), unit: () => "A required" },
+    { at: 4, label: "Breaker", value: () => calc().br, unit: () => "A standard size" },
+  ]);
+  const chips = h("div", "chips");
+  STD.forEach(v => chips.append(h("div", "chip", v)));
+  const stage = h("div", "stage"); stage.append(pipe, chips);
+
+  const ctrls = h("div", "controls");
+  ctl(ctrls, 'Load <input type="range" min="5" max="800" step="5"> <output></output> kW').querySelector("input").oninput = e => { P.kw = +e.target.value; update(step); };
+  const sel = (label, key, opts) => { const l = ctl(ctrls, label + " <select></select>"), se = l.querySelector("select"); opts.forEach(o => se.append(new Option(o + (key === "v" ? " V" : ""), o))); se.value = P[key]; se.onchange = () => { P[key] = +se.value; update(step); }; };
+  sel("Voltage", "v", [380, 400, 415]); sel("PF", "pf", [0.8, 0.9, 0.95, 1]);
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const panel = makePanel("Load to breaker", "Three-phase current and protective device selection.", [
+    { at: 0, html: () => `A feeder carries <span class="v">${fmt(P.kw, 0)} kW</span> of real power.` },
+    { at: 1, html: () => `Convert to apparent power:<br><span class="f">S = P / PF = ${fmt(P.kw, 0)} / ${P.pf}</span> = <span class="v">${fmt(calc().kva, 1)} kVA</span>` },
+    { at: 2, html: () => `Three-phase line current:<br><span class="f">I = S &times; 1000 / (&radic;3 &times; V)</span><br><span class="f">= ${fmt(calc().kva, 1)}k / (1.732 &times; ${P.v})</span> = <span class="v">${fmt(calc().amps, 1)} A</span>` },
+    { at: 3, html: () => `Continuous loads: size at 125%.<br><span class="f">${fmt(calc().amps, 1)} &times; 1.25</span> = <span class="v">${fmt(calc().need, 1)} A</span>` },
+    { at: 4, html: () => `Pick the next standard rating &ge; ${fmt(calc().need, 0)} A:<br><span class="big">${calc().br} A breaker</span>` },
+  ]);
+  function update(st) {
+    step = st; const c = calc();
+    $("input", ctrls).nextElementSibling.textContent = fmt(P.kw, 0);
+    chips.classList.toggle("on", st >= 3);
+    [...chips.children].forEach((e, i) => {
+      const v = STD[i];
+      e.className = "chip" + (v < c.need ? " low" : "") + (st >= 4 && v === c.br ? " pick" : "") ;
+      if (st === 3 && v === c.br) e.classList.add("mark");
+    });
+    pipe.update(st); panel.update(st);
+  }
+  return { id: "amps", name: "Load to breaker", steps: ["Load", "kVA", "Current", "125% rule", "Breaker"], nodes: [wrap, panel], update };
+})();
+
+/* =========================================================
+   MODULE 4  -  Binary
+   ========================================================= */
+const M4 = (() => {
+  const bits = [0, 1, 0, 1, 1, 0, 1, 0];
+  let step = 0, timer = null;
+  const val = () => bits.reduce((a, b, i) => a + b * 2 ** (7 - i), 0);
+  const row = h("div", "bits"), cells = [];
+  bits.forEach((_, i) => {
+    const w = 2 ** (7 - i), d = h("div", "bit", `<div class="w">${w}</div><button>0</button><div class="c"></div><div class="p">2<sup>${7 - i}</sup></div>`);
+    $("button", d).onclick = () => { bits[i] ^= 1; update(step); };
+    row.append(d); cells.push(d);
+  });
+  const sumrow = h("div", "sumrow", '<div class="note">decimal value</div><div class="big" id="bdec">0</div>');
+  const stage = h("div", "stage"); stage.append(row, sumrow);
+
+  const ctrls = h("div", "controls");
+  const mk = (t, fn) => { const b = h("button", null, t); b.onclick = fn; ctrls.append(b); return b; };
+  mk("+1", () => { setVal((val() + 1) % 256); }); mk("-1", () => { setVal((val() + 255) % 256); });
+  mk("Random", () => setVal(Math.floor(Math.random() * 256))); mk("Reset", () => setVal(0));
+  const auto = mk("Auto count", () => {
+    if (timer) { clearInterval(timer); timer = null; auto.classList.remove("on"); return; }
+    auto.classList.add("on"); timer = setInterval(() => setVal((val() + 1) % 256), 450);
+  });
+  function setVal(v) { for (let i = 0; i < 8; i++) bits[i] = (v >> (7 - i)) & 1; update(step); }
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const panel = makePanel("How binary becomes a number", "Eight switches, each worth double the one to its right.", [
+    { at: 0, html: () => `A <b>bit</b> is a switch: 0 or 1. Click to flip. Current pattern: <span class="v">${bits.join("")}</span>` },
+    { at: 1, html: () => `Each position has a <b>place value</b> that doubles going left: <span class="f">1, 2, 4, 8, 16, 32, 64, 128</span>` },
+    { at: 2, html: () => { const on = bits.map((b, i) => b ? 2 ** (7 - i) : null).filter(x => x != null); return `Add the weights of the bits that are ON:<br><span class="f">${on.length ? on.join(" + ") : "0"}</span> = <span class="v">${val()}</span>`; } },
+    { at: 3, html: () => `Same value, other views:<br>Hex <span class="v">0x${val().toString(16).toUpperCase().padStart(2, "0")}</span> &middot; Binary <span class="v">${bits.join("")}</span><br><span class="note">8 bits give 2<sup>8</sup> = 256 values (0&ndash;255), like one octet of an IP address or 8 breaker positions.</span>` },
+  ]);
+  function update(st) {
+    step = st;
+    cells.forEach((d, i) => {
+      const b = $("button", d); b.textContent = bits[i]; b.classList.toggle("one", !!bits[i]);
+      $(".w", d).classList.toggle("on", st >= 1);
+      const c = $(".c", d); c.classList.toggle("on", st >= 2); c.textContent = bits[i] ? "+" + 2 ** (7 - i) : "0";
+    });
+    sumrow.classList.toggle("on", st >= 2);
+    $("#bdec").textContent = val();
+    panel.update(st);
+  }
+  return { id: "bin", name: "Binary", steps: ["Bits", "Place values", "Add up", "Hex & range"], nodes: [wrap, panel], update };
+})();
+
+/* =========================================================
+   Presentation shell
+   ========================================================= */
+const MODS = [M1, M2, M3, M4];
+let mi = 0, st = 0;
+const nav = $("#nav"), main = $("#main"), dots = $("#dots");
+MODS.forEach((m, i) => {
+  const b = h("button", null, `<b>${i + 1}</b>${m.name}`); b.onclick = () => go(i, 0); nav.append(b); m.btn = b;
+  m.root = h("section", "module"); m.root.append(...m.nodes); main.append(m.root);
+});
+function go(i, s0) {
+  mi = i; st = s0; const m = MODS[mi];
+  MODS.forEach(x => { x.root.classList.toggle("on", x === m); x.btn.classList.toggle("on", x === m); });
+  dots.replaceChildren(...m.steps.map((t, k) => { const d = h("span", null, `${k + 1}. ${t}`); d.onclick = () => go(mi, k); d.className = k < st ? "done" : k === st ? "cur" : ""; return d; }));
+  m.update(st);
+  history.replaceState(null, "", `#${m.id}-${st}`);
+}
+function next() { const m = MODS[mi]; if (st < m.steps.length - 1) go(mi, st + 1); else if (mi < MODS.length - 1) go(mi + 1, 0); }
+function prev() { if (st > 0) go(mi, st - 1); else if (mi > 0) go(mi - 1, MODS[mi - 1].steps.length - 1); }
+$("#next").onclick = next; $("#prev").onclick = prev;
+addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.target.blur(); }
+  if (e.key === "ArrowRight" || e.key === "PageDown") next();
+  else if (e.key === "ArrowLeft" || e.key === "PageUp") prev();
+  else if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); next(); }
+  else if (/^[1-4]$/.test(e.key)) go(+e.key - 1, 0);
+  else if (e.key.toLowerCase() === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+});
+// make sure every module has a first render (so cross-module values like hall load are ready)
+MODS.forEach(m => m.update(0));
+const hm = location.hash.match(/#(\w+)-(\d+)/), start = hm ? MODS.findIndex(m => m.id === hm[1]) : -1;
+start >= 0 ? go(start, Math.min(+hm[2], MODS[start].steps.length - 1)) : go(0, 0);
+</script>
+</body>
+</html>

@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rack Grouping Math Explainer</title>
+<style>
+:root{
+  --bg:#0a0b0d; --panel:#121418; --panel2:#171a1f; --line:#262a31; --line2:#333843;
+  --text:#e8eaed; --mute:#8b919c; --dim:#5b616c;
+  --amber:#f5a524; --teal:#2dd4bf; --sky:#60a5fa; --rose:#fb7185; --lime:#a3e635; --violet:#a78bfa;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
+  --sans:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{
+  background:
+    radial-gradient(1200px 600px at 70% -10%,#16181d 0%,transparent 60%),
+    linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px) 0 0/48px 48px,
+    linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px) 0 0/48px 48px,
+    var(--bg);
+  color:var(--text);font-family:var(--sans);display:flex;flex-direction:column;overflow:hidden;
+}
+header{display:flex;align-items:center;gap:28px;padding:14px 28px;border-bottom:1px solid var(--line);background:rgba(10,11,13,.8);backdrop-filter:blur(6px)}
+.brand{font-weight:700;letter-spacing:.04em;font-size:15px;color:var(--amber);white-space:nowrap}
+.brand small{color:var(--mute);font-weight:500;margin-left:8px;letter-spacing:0}
+nav{display:flex;gap:6px;flex-wrap:wrap}
+nav button{background:none;border:1px solid transparent;color:var(--mute);font:600 14px var(--sans);padding:8px 14px;border-radius:8px;cursor:pointer;transition:.2s}
+nav button:hover{color:var(--text);background:var(--panel)}
+nav button.on{color:var(--text);background:var(--panel2);border-color:var(--line2)}
+nav button b{color:var(--amber);margin-right:6px;font-family:var(--mono)}
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,1fr);gap:20px;padding:20px 28px}
+.module{display:none;grid-column:1/3;grid-template-columns:subgrid;gap:20px;min-height:0}
+.module.on{display:grid}
+.stagewrap{display:flex;flex-direction:column;gap:14px;min-height:0}
+.stage{flex:1;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 16px;font-size:13px;color:var(--mute)}
+.controls label{display:flex;align-items:center;gap:8px}
+.controls output{color:var(--text);font-family:var(--mono);min-width:44px}
+.controls button,.controls select{background:var(--panel2);color:var(--text);border:1px solid var(--line2);border-radius:7px;padding:6px 12px;font:600 13px var(--sans);cursor:pointer}
+.controls button:hover{border-color:var(--amber)}
+.controls button.on{background:var(--amber);color:#111;border-color:var(--amber)}
+input[type=range]{accent-color:var(--amber);width:150px}
+aside{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+aside h2{font-size:22px;margin-bottom:2px}
+aside .sub{color:var(--mute);font-size:14px;margin-bottom:14px}
+.line{opacity:0;transform:translateY(8px);transition:opacity .45s,transform .45s;max-height:0;overflow:hidden;font-size:16px;line-height:1.6;border-left:3px solid var(--line2);padding-left:14px;margin:0}
+.line.on{opacity:1;transform:none;max-height:600px;margin:7px 0}
+.line.cur{border-left-color:var(--amber)}
+.line.flash{animation:flash .6s}
+@keyframes flash{from{background:rgba(245,165,36,.18)}to{background:transparent}}
+.f{font-family:var(--mono);color:var(--amber)}
+.v{font-family:var(--mono);color:var(--text);font-weight:700}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:baseline}
+.note{color:var(--mute);font-size:14px}
+.big{font-size:28px;font-family:var(--mono);font-weight:700;color:var(--amber)}
+footer{display:flex;align-items:center;gap:18px;padding:12px 28px;border-top:1px solid var(--line);background:rgba(10,11,13,.8)}
+footer button{background:var(--panel2);border:1px solid var(--line2);color:var(--text);font:600 14px var(--sans);padding:9px 18px;border-radius:9px;cursor:pointer}
+footer button:hover{border-color:var(--amber)}
+.dots{display:flex;gap:8px;flex:1;justify-content:center;align-items:center}
+.dots span{font-size:12px;color:var(--dim);padding:5px 10px;border-radius:20px;border:1px solid var(--line);cursor:pointer;transition:.2s}
+.dots span.done{color:var(--mute);border-color:var(--line2)}
+.dots span.cur{background:var(--amber);color:#111;border-color:var(--amber);font-weight:700}
+.hint{color:var(--dim);font-size:12px;white-space:nowrap}
+/* SVG hall */
+svg text{font-family:var(--sans)}
+.rack rect.body{transition:fill .4s,stroke .4s,fill-opacity .4s;cursor:pointer}
+.rack:hover rect.body{stroke:var(--amber)!important}
+.rack text{pointer-events:none}
+.cut{opacity:0;transition:opacity .35s}
+.cut.on{opacity:1}
+.cut line{stroke:var(--amber);stroke-width:3;stroke-dasharray:8 6;animation:dash 1s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-14}}
+.hit{fill:transparent;cursor:pointer}
+.hit:hover+.ghost{opacity:.6}
+.ghost{stroke:var(--amber);stroke-width:2;stroke-dasharray:3 6;opacity:0;transition:.2s;pointer-events:none}
+.pill{transition:opacity .4s}
+/* pipeline */
+.pipe{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;justify-content:center}
+.card{flex:1;min-width:130px;max-width:210px;background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:14px 14px;opacity:.12;transform:translateY(10px) scale(.97);transition:.5s}
+.card.on{opacity:1;transform:none}
+.card.cur{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 8px 30px rgba(245,165,36,.12)}
+.card .l{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.08em}
+.card .n{font:700 28px var(--mono);margin:6px 0 2px}
+.card .u{font-size:13px;color:var(--mute)}
+.arrow{align-self:center;color:var(--dim);font-size:20px}
+/* ups blocks */
+.blocks{display:flex;flex-direction:column;gap:12px;margin-top:22px}
+.brow{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.brow .tag{width:84px;font-size:12px;color:var(--mute)}
+.unit{width:54px;height:62px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);display:flex;flex-direction:column;align-items:center;justify-content:center;font:600 11px var(--mono);color:var(--dim);opacity:0;transform:scale(.6);transition:.4s}
+.unit.on{opacity:1;transform:none}
+.unit.act{background:rgba(245,165,36,.16);border-color:var(--amber);color:var(--amber)}
+.unit.spare{background:rgba(45,212,191,.12);border-color:var(--teal);color:var(--teal);border-style:dashed}
+.unit i{display:block;width:26px;height:3px;background:currentColor;opacity:.5;margin:2px 0;border-radius:2px}
+.util{margin-top:20px;opacity:0;transition:.5s}
+.util.on{opacity:1}
+.bar{height:14px;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;overflow:hidden;margin-top:6px}
+.bar>div{height:100%;background:linear-gradient(90deg,var(--teal),var(--amber));transition:width .6s}
+/* chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:24px;opacity:0;transition:.5s}
+.chips.on{opacity:1}
+.chip{font:600 14px var(--mono);padding:8px 12px;border-radius:8px;border:1px solid var(--line2);color:var(--dim);transition:.4s}
+.chip.low{color:var(--mute);background:var(--panel2)}
+.chip.pick{background:var(--amber);color:#111;border-color:var(--amber);transform:scale(1.2);box-shadow:0 0 24px rgba(245,165,36,.4)}
+.chip.mark{border-color:var(--teal);color:var(--teal)}
+/* binary */
+.bits{display:flex;gap:10px;justify-content:center}
+.bit{width:92px;text-align:center}
+.bit .w{height:22px;font:600 14px var(--mono);color:var(--mute);opacity:0;transition:.4s}
+.bit .w.on{opacity:1}
+.bit button{width:92px;height:116px;border-radius:12px;border:1px solid var(--line2);background:var(--panel2);color:var(--dim);font:700 54px var(--mono);cursor:pointer;transition:.25s;margin:8px 0}
+.bit button.one{background:rgba(245,165,36,.16);border-color:var(--amber);color:var(--amber);box-shadow:0 0 28px rgba(245,165,36,.2)}
+.bit button:hover{transform:translateY(-3px)}
+.bit .c{height:24px;font:600 15px var(--mono);color:var(--text);opacity:0;transition:.4s}
+.bit .c.on{opacity:1}
+.bit .p{font-size:11px;color:var(--dim);font-family:var(--mono)}
+.sumrow{margin-top:26px;text-align:center;opacity:0;transition:.5s}
+.sumrow.on{opacity:1}
+.sumrow .big{font-size:56px}
+@media (max-width:1100px){main{grid-template-columns:1fr}.module{grid-column:1}}
+/* ---- math explainer additions ---- */
+.stage.top{justify-content:flex-start;overflow:auto}
+.blocksrow{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin:6px 0 18px}
+.bk{width:26px;height:34px;border-radius:5px;border:1px solid rgba(255,255,255,.12);transition:background .5s,transform .3s;display:flex;align-items:flex-end;justify-content:center;font:600 9px var(--mono);color:rgba(0,0,0,.6);padding-bottom:2px}
+.bk.cutafter{margin-right:14px;position:relative}
+.bk.cutafter::after{content:"";position:absolute;right:-10px;top:-6px;bottom:-6px;border-right:3px dashed var(--amber)}
+.lbar{display:grid;grid-template-columns:230px 1fr 150px;gap:12px;align-items:center;margin:9px 0;font-size:14px;opacity:0;transform:translateX(-10px);transition:.5s}
+.lbar.on{opacity:1;transform:none}
+.lbar .t{color:var(--mute)}.lbar .t b{color:var(--text)}
+.lbar .tr{height:16px;background:var(--panel2);border-radius:8px;overflow:hidden}
+.lbar .tr div{height:100%;border-radius:8px;transition:width .8s}
+.lbar .num{font:600 13px var(--mono);text-align:right}
+.mat{border-collapse:separate;border-spacing:3px;margin:0 auto}
+.mat th{font:600 12px var(--mono);color:var(--mute);padding:2px 6px;text-align:center}
+.mat td{text-align:center;font:700 15px var(--mono);min-width:44px;height:34px;border-radius:6px;background:var(--panel2);color:var(--dim);transition:.3s}
+.mat td.lab{background:none;color:var(--mute);font-size:13px;text-align:right;padding-right:8px}
+.mat td.kw{text-align:left;min-width:190px;padding:0;background:none}
+.kwbar{height:30px;border-radius:6px;background:#2a2e36;color:#111;font:700 13px var(--mono);display:flex;align-items:center;padding-left:8px;transition:width .4s,background .4s;white-space:nowrap}
+.mat td.t1{background:rgba(245,165,36,.18);color:var(--amber);cursor:pointer}
+.mat td.t0{cursor:pointer}
+.mat td.fx{opacity:.4;cursor:default}
+.mat td.bad{outline:2px solid var(--rose);background:rgba(251,113,133,.22);color:var(--rose)}
+.mat td.cutrow{border-bottom:0}
+.mat tr.cutline td{box-shadow:0 5px 0 -3px var(--amber)}
+.mat td.hid,.mat th.hid{display:none}
+.mat td.ysum{background:none;font-size:14px}
+.sep{width:14px}
+.heat td{min-width:62px;height:40px;font-size:13px}
+.heat td.max{outline:2px solid var(--amber);color:#fff}
+.heat td.diag{background:#0d0e10;color:var(--dim)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px}
+.gcard{border:1px solid var(--line2);border-radius:12px;padding:12px;background:var(--panel2);transition:.4s}
+.gcard.hot{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
+.gcard h4{font-size:14px;margin-bottom:8px}
+.tagr{font-size:12px;color:var(--mute);margin-top:6px}
+.fc{display:flex;flex-direction:column;gap:6px;align-items:stretch;margin:6px 0}
+.fcb{border:1px solid var(--line2);border-radius:9px;padding:7px 10px;font-size:13px;color:var(--mute);background:var(--panel2);transition:.3s}
+.fcb.hit{color:var(--text);border-color:var(--amber);background:rgba(245,165,36,.1)}
+.fcb.end{background:var(--amber);color:#111;font-weight:700}
+.fcb.endp{background:#3a3f49;color:#fff}
+.fcb.endg{background:#16a34a;color:#fff}
+.fcarrow{text-align:center;color:var(--dim);font-size:12px;line-height:1}
+.stat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+.stat div{background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:8px 10px}
+.stat small{display:block;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.stat b{font:700 20px var(--mono)}
+.gapbar{height:10px;border-radius:6px;background:var(--panel2);border:1px solid var(--line2);overflow:hidden;margin:4px 0 10px}
+.gapbar div{height:100%;background:var(--rose);transition:width .6s}
+.badge{display:inline-block;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:700;background:var(--teal);color:#06201c}
+.tnode rect{transition:.4s}
+.tmini{font:600 11px var(--mono);border-collapse:collapse;margin:6px 0}
+.tmini td,.tmini th{padding:2px 7px;text-align:center;border:1px solid var(--line)}
+.tmini td.fr{color:var(--amber);background:rgba(245,165,36,.12)}
+.tmini td.bk2{outline:2px solid var(--rose)}
+.dots{flex-wrap:wrap}
+.dots span{padding:4px 8px}
+svg .grid line{stroke:#22262d}
+.small{font-size:13px;color:var(--mute)}
+
+aside>*{flex-shrink:0}
+.gcard .heat td{min-width:40px;height:34px;font-size:12px;padding:0 2px}
+.gcard .heat th{padding:2px 2px}
+.grid2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">GROUPING MATH<small>MILP explainer</small></div>
+  <nav id="nav"></nav>
+</header>
+<main id="main"></main>
+<footer>
+  <button id="prev">&larr; Back</button>
+  <div class="dots" id="dots"></div>
+  <span class="hint">&larr; &rarr; step &nbsp;|&nbsp; 1-6 module &nbsp;|&nbsp; F fullscreen</span>
+  <button id="next">Next &rarr;</button>
+</footer>
+<script>
+"use strict";
+/* ---------- helpers ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const NS = "http://www.w3.org/2000/svg";
+const s = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const fmt = (n, d = 1) => (+n.toFixed(d)).toLocaleString("en-US", { maximumFractionDigits: d });
+const COLORS = ["#f5a524", "#2dd4bf", "#60a5fa", "#fb7185", "#a3e635", "#a78bfa"];
+const comb = (n, k) => { n = BigInt(n); k = BigInt(k); if (k < 0n || k > n) return 0n; let r = 1n; for (let i = 1n; i <= k; i++) r = r * (n - k + i) / i; return r; };
+const log10Big = b => { const t = b.toString(); return t.length - 1 + Math.log10(Number("0." + t.slice(0, 15)) * 10); };
+const fmtBig = b => { const t = b.toString(); if (t.length <= 9) return Number(b).toLocaleString("en-US"); return `${t[0]}.${t.slice(1, 3)}&times;10<sup>${t.length - 1}</sup>`; };
+
+function makePanel(title, sub, lines) {
+  const aside = h("aside");
+  aside.append(h("h2", null, title), h("div", "sub", sub));
+  const els = lines.map(L => { const e = h("div", "line"); e._at = L.at; e._fn = L.html; e._last = ""; aside.append(e); return e; });
+  aside.update = step => els.forEach(e => {
+    const html = e._fn();
+    if (html !== e._last) { e.innerHTML = html; if (e._last && e.classList.contains("on")) { e.classList.remove("flash"); void e.offsetWidth; e.classList.add("flash"); } e._last = html; }
+    e.classList.toggle("on", step >= e._at);
+    e.classList.toggle("cur", step === e._at);
+  });
+  return aside;
+}
+const ctl = (parent, html) => { const l = h("label", null, html); parent.append(l); return l; };
+const btn = (parent, text, fn) => { const b = h("button", null, text); b.onclick = fn; parent.append(b); return b; };
+
+/* =========================================================
+   Shared state (rows of the data hall)
+   ========================================================= */
+const S = { P: [300, 250, 400, 350, 200, 500, 150, 450], b1: 3, b2: 6, n: 4, t: null };
+const R = S.P.length, G = 3;
+const UNITS = n => "ABCDEF".slice(0, n).split("");
+const subsetsOf = (units, k) => { const out = []; (function rec(st, cur) { if (cur.length === k) { out.push(cur.join("")); return; } for (let i = st; i < units.length; i++) rec(i + 1, [...cur, units[i]]); })(0, []); return out; };
+/* identical to _build_coeff_table() in engine/optimization.py */
+const coeff = (sub, f, u) => { const mem = sub.split(""); if (u === f || !mem.includes(u)) return 0; return mem.includes(f) ? 1 / (mem.length - 1) : 1 / mem.length; };
+const groupRows = () => [S.P.slice(0, S.b1), S.P.slice(S.b1, S.b2), S.P.slice(S.b2)];
+const sum = a => a.reduce((x, y) => x + y, 0);
+
+/* =========================================================
+   MODULE 1 - Search space
+   ========================================================= */
+const A = (() => {
+  const Q = { R: 24, G: 4, n: 4 };
+  let step = 0, free = [], cuts = [];
+  const reshuffle = () => {
+    free = Array.from({ length: Q.R }, () => Math.floor(Math.random() * Q.G));
+    const set = new Set(); while (set.size < Q.G - 1) set.add(1 + Math.floor(Math.random() * (Q.R - 1)));
+    cuts = [...set].sort((a, b) => a - b);
+  };
+  reshuffle();
+  const row = h("div", "blocksrow");
+  const bars = h("div");
+  const stage = h("div", "stage top"); stage.append(h("div", "note", "Each block is one row of racks (a HAC row). Colour = which group it belongs to."), row, bars);
+
+  const ctrls = h("div", "controls");
+  const rr = ctl(ctrls, 'Rows <b>R</b> <input type="range" min="6" max="48" value="24"> <output></output>');
+  const gg = ctl(ctrls, 'Groups <b>G</b> <input type="range" min="2" max="8" value="4"> <output></output>');
+  const nn = ctl(ctrls, 'UPS per group <select><option>4</option><option>5</option><option>6</option></select>');
+  $("input", rr).oninput = e => { Q.R = +e.target.value; reshuffle(); update(step); };
+  $("input", gg).oninput = e => { Q.G = +e.target.value; reshuffle(); update(step); };
+  $("select", nn).onchange = e => { Q.n = +e.target.value; update(step); };
+  btn(ctrls, "Shuffle", () => { reshuffle(); update(step); });
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const nums = () => {
+    const freeN = BigInt(Q.G) ** BigInt(Q.R), contN = comb(Q.R - 1, Q.G - 1), pr = BigInt(Q.n * (Q.n - 1) / 2), prN = pr ** BigInt(Q.R);
+    return { freeN, contN, pr, prN, freeAll: freeN * prN, contAll: contN * prN };
+  };
+  const panel = makePanel("How big is the search?", "Why we cannot just try every grouping.", [
+    { at: 0, html: () => { const k = nums(); return `If any row can go to any group, each of the <span class="v">R = ${Q.R}</span> rows has <span class="v">G = ${Q.G}</span> choices:<br><span class="f">G<sup>R</sup> = ${Q.G}<sup>${Q.R}</sup></span> = <span class="big">${fmtBig(k.freeN)}</span><span class="note">(this is the m<sup>n</sup> growth)</span>`; } },
+    { at: 1, html: () => { const k = nums(); return `Physically, a group must be a block of <b>adjacent</b> rows. So we only choose where to cut: <span class="v">G&minus;1 = ${Q.G - 1}</span> cut positions among <span class="v">R&minus;1 = ${Q.R - 1}</span> gaps:<br><span class="f">C(R&minus;1, G&minus;1) = C(${Q.R - 1}, ${Q.G - 1})</span> = <span class="big">${fmtBig(k.contN)}</span>`; } },
+    { at: 2, html: () => { const k = nums(); return `But each row also picks <b>which UPS pair</b> it plugs into: C(${Q.n}, 2) = <span class="v">${k.pr}</span> choices per 2-source row.<br><span class="f">${k.pr}<sup>${Q.R}</sup></span> = <span class="v">${fmtBig(k.prN)}</span> pairings.<br><span class="note">The code's brute-force check stops at 2,000,000 combinations.</span>`; } },
+    { at: 3, html: () => { const k = nums(); return `Total with pairing:<br>free: <span class="v">${fmtBig(k.freeAll)}</span> &nbsp; contiguous: <span class="v">${fmtBig(k.contAll)}</span><br><span class="note">Contiguity removes a huge factor, but the rest is still far too big to enumerate. That is why we use a MILP solver.</span>`; } },
+  ]);
+
+  function update(st) {
+    step = st;
+    $("output", rr).textContent = Q.R; $("output", gg).textContent = Q.G;
+    row.replaceChildren();
+    // contiguous layout: cuts positions (free layout uses random colours)
+    const cont = []; { let g = 0; for (let i = 0; i < Q.R; i++) { cont.push(g); if (cuts.includes(i + 1)) g++; } }
+    for (let i = 0; i < Q.R; i++) {
+      const g = st >= 1 ? cont[i] : free[i];
+      const b = h("div", "bk" + (st >= 1 && cuts.includes(i + 1) ? " cutafter" : ""), i + 1);
+      b.style.background = COLORS[g % COLORS.length]; row.append(b);
+    }
+    const k = nums();
+    const items = [
+      { at: 0, t: `<b>Free</b> grouping &nbsp;G<sup>R</sup>`, v: log10Big(k.freeN), n: fmtBig(k.freeN), c: "#fb7185" },
+      { at: 1, t: `<b>Contiguous</b> &nbsp;C(R&minus;1,G&minus;1)`, v: log10Big(k.contN) || 0, n: fmtBig(k.contN), c: "#2dd4bf" },
+      { at: 2, t: `<b>Pairing</b> &nbsp;${k.pr}<sup>R</sup>`, v: log10Big(k.prN), n: fmtBig(k.prN), c: "#60a5fa" },
+      { at: 3, t: `<b>Contiguous &times; pairing</b>`, v: log10Big(k.contAll), n: fmtBig(k.contAll), c: "#f5a524" },
+    ];
+    const mx = Math.max(...items.map(i => i.v), 1) * 1.02;
+    bars.replaceChildren(...items.map(i => { const d = h("div", "lbar" + (st >= i.at ? " on" : ""), `<div class="t">${i.t}</div><div class="tr"><div style="width:${Math.max(1, i.v / mx * 100)}%;background:${i.c}"></div></div><div class="num">${i.n}</div>`); return d; }));
+    bars.append(h("div", "small", "Bars use a log scale (width = number of digits)."));
+    panel.update(st);
+  }
+  return { id: "space", name: "Search space", steps: ["Free: G^R", "Contiguous cuts", "Pairing", "Compare"], nodes: [wrap, panel], update };
+})();
+
+/* =========================================================
+   MODULE 2 - t -> y -> P
+   ========================================================= */
+const B = (() => {
+  let step = 0;
+  const mkT = () => S.P.map((_, i) => [i < S.b1 ? 1 : 0, i < S.b2 ? 1 : 0]);
+  S.t = mkT();
+  const tget = (i, g) => g === 0 ? 0 : g === G ? 1 : S.t[i][g - 1];
+  const yget = (i, g) => tget(i, g) - tget(i, g - 1);
+  function viol() {
+    const v = new Set(), msgs = [];
+    for (let g = 1; g < G; g++) for (let i = 0; i < R - 1; i++) if (tget(i, g) < tget(i + 1, g)) { v.add(i + "," + g); v.add((i + 1) + "," + g); msgs.push(`t[${i + 1},${g}] = 0 but t[${i + 2},${g}] = 1 &rarr; breaks t[i,g] &ge; t[i+1,g]`); }
+    for (let i = 0; i < R; i++) for (let g = 1; g < G - 1; g++) if (tget(i, g) > tget(i, g + 1)) { v.add(i + "," + g); v.add(i + "," + (g + 1)); msgs.push(`t[${i + 1},${g}] = 1 but t[${i + 1},${g + 1}] = 0 &rarr; breaks t[i,g] &le; t[i,g+1]`); }
+    return { v, msgs };
+  }
+  const tbl = h("table", "mat");
+  const head = h("tr"); ["", "P<sub>i</sub> (kW)", "t[i,1]", "t[i,2]", "", "y[i,1]", "y[i,2]", "y[i,3]"].forEach((t, i) => { const th = h("th", i === 4 ? "sep" : "", t); th._col = i < 2 ? 0 : i < 4 ? 1 : i === 4 ? 3 : 3; head.append(th); });
+  tbl.append(head);
+  const rowsEl = [], maxKw = 500;
+  for (let i = 0; i < R; i++) {
+    const tr = h("tr"); const o = { tr, bar: null, t: [], y: [] };
+    tr.append(h("td", "lab", "R" + (i + 1)));
+    const kt = h("td", "kw"); o.bar = h("div", "kwbar"); kt.append(o.bar); tr.append(kt);
+    for (let g = 1; g < G; g++) { const td = h("td"); td._col = 1; td.onclick = () => { if (step < 1) return; S.t[i][g - 1] ^= 1; update(step); }; tr.append(td); o.t.push(td); }
+    const sp = h("td", "sep"); sp._col = 3; tr.append(sp);
+    for (let g = 1; g <= G; g++) { const td = h("td"); td._col = 3; tr.append(td); o.y.push(td); }
+    tbl.append(tr); rowsEl.push(o);
+  }
+  const foot = h("tr"); foot.append(h("td", "lab", ""), h("td", "lab", "&Sigma; per group &rarr;"), h("td"), h("td"), h("td", "sep"));
+  const psum = [0, 1, 2].map(() => { const td = h("td", "ysum"); foot.append(td); return td; });
+  $$("td", foot).forEach(c => c._col = 4);
+  tbl.append(foot);
+  const stage = h("div", "stage"); stage.append(tbl);
+
+  const ctrls = h("div", "controls");
+  const c1 = ctl(ctrls, 'Cut 1 after row <input type="range" min="1" max="6" value="3"> <output></output>');
+  const c2 = ctl(ctrls, 'Cut 2 after row <input type="range" min="2" max="7" value="6"> <output></output>');
+  $("input", c1).oninput = e => { S.b1 = +e.target.value; if (S.b2 <= S.b1) S.b2 = S.b1 + 1; S.t = mkT(); update(step); };
+  $("input", c2).oninput = e => { S.b2 = +e.target.value; if (S.b1 >= S.b2) S.b1 = S.b2 - 1; S.t = mkT(); update(step); };
+  btn(ctrls, "Reset t", () => { S.t = mkT(); update(step); });
+  btn(ctrls, "Balance cuts", () => {
+    let best = Infinity, bb = [3, 6];
+    for (let a = 1; a < R - 1; a++) for (let b = a + 1; b < R; b++) { const m = Math.max(sum(S.P.slice(0, a)), sum(S.P.slice(a, b)), sum(S.P.slice(b))); if (m < best) { best = m; bb = [a, b]; } }
+    S.b1 = bb[0]; S.b2 = bb[1]; S.t = mkT(); update(step);
+  });
+  btn(ctrls, "Random kW", () => { S.P = S.P.map(() => 100 + 50 * Math.floor(Math.random() * 9)); update(step); });
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const Pg = () => [0, 1, 2].map(g => S.P.reduce((a, p, i) => a + yget(i, g + 1) * p, 0));
+  const panel = makePanel("From cut lines to equations", "Binary t makes 'adjacent rows only' a linear constraint.", [
+    { at: 0, html: () => `Each row <i>i</i> has load <span class="f">P<sub>i</sub></span>. Total = <span class="v">${sum(S.P)} kW</span>, to be split into <span class="v">G = ${G}</span> groups.` },
+    { at: 1, html: () => `Binary variable <span class="f">t[i,g] = 1</span> when <b>row i is in a group &le; g</b>.<br>Fixed: t[i,0] = 0 and t[i,G] = 1.<br><span class="note">Each column is a staircase of 1s on top, 0s below. The cut line is where the 1s stop. <b>Click a t cell</b> to break it.</span>` },
+    { at: 2, html: () => { const { msgs } = viol(); return `Two linear rules keep groups contiguous:<br><span class="f">t[i,g] &ge; t[i+1,g]</span> (no gaps in a column)<br><span class="f">t[i,g] &le; t[i,g+1]</span> (group &le; g sits inside group &le; g+1)<br>` + (msgs.length ? `<span style="color:var(--rose)">${msgs.slice(0, 3).join("<br>")}</span>` : `<span style="color:var(--teal)">&#10003; all rules satisfied: every group is one block of adjacent rows</span>`); } },
+    { at: 3, html: () => `Row <i>i</i> is in group exactly <i>g</i> when it is in &le; g but not &le; g&minus;1:<br><span class="f">y[i,g] = t[i,g] &minus; t[i,g&minus;1]</span><br><span class="note">e.g. row 1: y = ${[1, 2, 3].map(g => yget(0, g)).join(", ")} &nbsp; &mdash; exactly one 1 per row.</span>` },
+    { at: 4, html: () => { const p = Pg(); return `Group load is a plain sum:<br><span class="f">P<sub>g</sub> = &Sigma; y[i,g] &middot; P<sub>i</sub></span><br>` + p.map((v, g) => `<span class="dot" style="background:${COLORS[g]}"></span>P<sub>${g + 1}</sub> = <span class="v">${fmt(v, 0)} kW</span>`).join("<br>") + `<br><span class="note">${comb(R - 1, G - 1)} valid cut choices exist for these ${R} rows.</span>`; } },
+  ]);
+
+  function update(st) {
+    step = st;
+    $("output", c1).textContent = S.b1; $("output", c2).textContent = S.b2;
+    $("input", c1).value = S.b1; $("input", c2).value = S.b2;
+    const { v } = viol();
+    const grpOf = i => i < S.b1 ? 0 : i < S.b2 ? 1 : 2;
+    rowsEl.forEach((o, i) => {
+      o.bar.style.width = (S.P[i] / maxKw * 100) + "%"; o.bar.textContent = S.P[i];
+      o.bar.style.background = st >= 3 ? COLORS[grpOf(i)] : "#3a3f49"; o.bar.style.color = st >= 3 ? "#111" : "#e8eaed";
+      o.tr.classList.toggle("cutline", st >= 1 && (i === S.b1 - 1 || i === S.b2 - 1));
+      o.t.forEach((td, k) => { const g = k + 1, val = S.t[i][k]; td.textContent = val; td.className = (val ? "t1" : "t0") + (v.has(i + "," + g) ? " bad" : ""); td._col = 1; });
+      o.y.forEach((td, k) => { const val = yget(i, k + 1); td.textContent = val; td.className = val === 1 ? "t1" : val === 0 ? "t0" : "bad"; td.style.cursor = "default"; td.style.background = val === 1 ? COLORS[k] + "33" : ""; td.style.color = val === 1 ? COLORS[k] : ""; td._col = 3; });
+    });
+    const p = Pg(); psum.forEach((td, g) => { td.textContent = fmt(p[g], 0); td.style.color = COLORS[g]; td._col = 4; });
+    $$("th,td", tbl).forEach(c => { const col = c._col; if (col === undefined) return; c.classList.toggle("hid", st < (col === 4 ? 4 : col)); });
+    panel.update(st);
+  }
+  return { id: "cuts", name: "Cuts: t, y, P", steps: ["Rows & kW", "Variable t", "Constraints", "y = t - t'", "P per group"], nodes: [wrap, panel], update };
+})();
+
+/* =========================================================
+   MODULE 3 - failure coefficients c[s,f,u]
+   ========================================================= */
+const C = (() => {
+  const rows = [{ kw: 300, sub: "AB" }, { kw: 250, sub: "CD" }, { kw: 400, sub: "AC" }];
+  let f = "A", step = 0;
+  const units = () => UNITS(S.n);
+  const loads = fault => { const L = {}; units().forEach(u => L[u] = 0); rows.forEach(r => units().forEach(u => { L[u] += fault ? r.kw * coeff(r.sub, fault, u) : (r.sub.includes(u) ? r.kw / r.sub.length : 0); })); if (fault) L[fault] = 0; return L; };
+  const matrix = () => units().map(ff => units().map(u => ff === u ? null : rows.reduce((a, r) => a + r.kw * coeff(r.sub, ff, u), 0)));
+
+  const W = 780, H = 310;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", style: "max-height:300px" });
+  const stage = h("div", "stage top"); stage.append(svg);
+  const heatWrap = h("div"); stage.append(heatWrap);
+
+  const ctrls = h("div", "controls");
+  const subs = () => [...subsetsOf(units(), 2), ...subsetsOf(units(), 4)];
+  const sels = rows.map((r, i) => { const l = ctl(ctrls, `Row ${i + 1} (${r.kw} kW) plugs into <select></select>`); const se = $("select", l); const fill = () => { se.replaceChildren(); subs().forEach(x => se.append(new Option((x.length === 2 ? "2-src " : "4-src ") + x, x))); se.value = r.sub; }; fill(); se.onchange = () => { r.sub = se.value; update(step); }; return { fill }; });
+  ctl(ctrls, 'UPS in group <select><option>4</option><option>5</option><option>6</option></select>').querySelector("select").onchange = e => { S.n = +e.target.value; if (!units().includes(f)) f = "A"; sels.forEach(x => x.fill()); rows.forEach(r => { if (!subs().includes(r.sub)) r.sub = "AB"; }); update(step); };
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const panel = makePanel("What happens when one UPS fails", "Coefficient c[s,f,u]: the share of a row's kW that lands on UPS u.", [
+    { at: 0, html: () => `A row plugs into a subset <span class="f">s</span> of the group's UPS (2 for 2-source, 4 for 4-source). Normally it shares its kW equally: <span class="f">c = 1/|s|</span>.<br><span class="note">${rows.map((r, i) => `Row ${i + 1}: ${r.kw} kW on ${r.sub} &rarr; ${fmt(r.kw / r.sub.length, 0)} each`).join("<br>")}</span>` },
+    { at: 1, html: () => `UPS <span class="v">${f}</span> fails (click any UPS to change). The rows plugged into it re-share among the <b>survivors</b>:<br><span class="f">c = 1/(|s|&minus;1)</span> &nbsp; if f&isin;s, u&isin;s, u&ne;f<br><span class="f">c = 1/|s|</span> &nbsp; if f&notin;s, u&isin;s<br><span class="f">c = 0</span> &nbsp; otherwise<br><span class="note">Load on each UPS = &Sigma; kW &middot; c over all rows.</span>` },
+    { at: 2, html: () => `Try every failure f. Cell [f,u] = load on u when f fails. Click a row to preview that failure.<br><span class="note">Total checks: n&times;(n&minus;1) = ${S.n * (S.n - 1)} cells per group.</span>` },
+    { at: 3, html: () => { const m = matrix().flat().filter(x => x != null); return `The group's <b>max-fail load</b> is the biggest cell:<br><span class="f">max<sub>f</sub> max<sub>u&ne;f</sub> &Sigma; kW &middot; c[s,f,u]</span><br><span class="big">= ${fmt(Math.max(...m), 1)} kW</span><br><span class="note">This is what evaluate_group_max_fail() returns, and what the optimiser pushes down.</span>`; } },
+  ]);
+
+  function update(st) {
+    step = st; svg.replaceChildren();
+    const us = units(), n = us.length, fault = st >= 1 ? f : null, L = loads(fault), mx = Math.max(...Object.values(L), 1);
+    const ux = k => 70 + k * ((W - 140) / (n - 1)), uy = 215, UW = 100, UH = 80;
+    const rx = i => 140 + i * 250, ry = 12, RW = 150, RH = 54;
+    rows.forEach((r, i) => {
+      r.sub.split("").forEach(u => {
+        const k = us.indexOf(u), x1 = rx(i) + RW / 2, y1 = ry + RH, x2 = ux(k), y2 = uy;
+        const dead = fault === u, share = fault ? (r.sub.includes(fault) ? (dead ? 0 : 1 / (r.sub.length - 1)) : 1 / r.sub.length) : 1 / r.sub.length;
+        const affected = fault && r.sub.includes(fault);
+        s("line", { x1, y1, x2, y2, stroke: dead ? "#fb7185" : affected ? "#f5a524" : COLORS[i], "stroke-width": dead ? 2 : 2 + share * 8, "stroke-dasharray": dead ? "5 5" : "", opacity: dead ? .8 : .75 }, svg);
+        if (!dead) { const lx = x1 + (x2 - x1) * .72, ly = y1 + (y2 - y1) * .72; s("rect", { x: lx - 22, y: ly - 11, width: 44, height: 20, rx: 6, fill: "#0a0b0d", stroke: affected ? "#f5a524" : "#333843" }, svg); s("text", { x: lx, y: ly + 4, fill: affected ? "#f5a524" : "#8b919c", "font-size": 12, "font-family": "ui-monospace,monospace", "text-anchor": "middle" }, svg).textContent = fmt(share, 2); }
+      });
+      s("rect", { x: rx(i), y: ry, width: RW, height: RH, rx: 9, fill: "#171a1f", stroke: COLORS[i], "stroke-width": 2 }, svg);
+      s("text", { x: rx(i) + RW / 2, y: ry + 24, fill: "#e8eaed", "font-size": 15, "font-weight": 700, "text-anchor": "middle" }, svg).textContent = `Row ${i + 1}: ${r.kw} kW`;
+      s("text", { x: rx(i) + RW / 2, y: ry + 43, fill: "#8b919c", "font-size": 12, "text-anchor": "middle" }, svg).textContent = `s = ${r.sub}  (|s| = ${r.sub.length})`;
+    });
+    us.forEach((u, k) => {
+      const g = s("g", { style: "cursor:pointer" }, svg), dead = fault === u, x = ux(k) - UW / 2;
+      s("rect", { x, y: uy, width: UW, height: UH, rx: 10, fill: dead ? "#2a1519" : "#171a1f", stroke: dead ? "#fb7185" : "#333843", "stroke-width": 2 }, g);
+      if (!dead) s("rect", { x: x + 6, y: uy + UH - 8 - 40 * L[u] / mx, width: UW - 12, height: 40 * L[u] / mx, rx: 4, fill: "#f5a524", opacity: .28 }, g);
+      s("text", { x: ux(k), y: uy + 24, fill: dead ? "#fb7185" : "#e8eaed", "font-size": 17, "font-weight": 700, "text-anchor": "middle" }, g).textContent = "UPS " + u + (dead ? "  ✕" : "");
+      s("text", { x: ux(k), y: uy + 52, fill: dead ? "#fb7185" : "#f5a524", "font-size": 18, "font-weight": 700, "font-family": "ui-monospace,monospace", "text-anchor": "middle" }, g).textContent = dead ? "FAILED" : fmt(L[u], 0) + " kW";
+      g.onclick = () => { if (step >= 1) { f = u; update(step); } };
+    });
+    // heat table
+    heatWrap.replaceChildren();
+    if (st >= 2) {
+      const M = matrix(), flat = M.flat().filter(x => x != null), mxv = Math.max(...flat);
+      const t = h("table", "mat heat"); t.style.marginTop = "12px";
+      t.append(h("tr", null, `<th>f fails &#8595; &nbsp; load on u &#8594;</th>` + us.map(u => `<th>${u}</th>`).join("")));
+      M.forEach((r, a) => { const tr = h("tr"); tr.append(h("td", "lab", "f = " + us[a])); r.forEach((v, b) => { const td = h("td", v == null ? "diag" : ""); if (v != null) { td.textContent = fmt(v, 0); td.style.background = `rgba(245,165,36,${.08 + .55 * v / mxv})`; td.style.color = "#e8eaed"; if (st >= 3 && Math.abs(v - mxv) < 1e-9) td.classList.add("max"); } else td.textContent = "-"; tr.append(td); }); tr.style.cursor = "pointer"; tr.onclick = () => { f = us[a]; update(step); }; t.append(tr); });
+      heatWrap.append(t);
+    }
+    panel.update(st);
+  }
+  return { id: "fail", name: "Failure c[s,f,u]", steps: ["Normal share", "One UPS fails", "Try every f", "Max-fail load"], nodes: [wrap, panel], update };
+})();
+
+/* =========================================================
+   MODULE 4 - objective: minimize M
+   ========================================================= */
+const D = (() => {
+  const U = UNITS(4), PAIRS = subsetsOf(U, 2);
+  const cm = {}; PAIRS.forEach(p => U.forEach(f => U.forEach(u => cm[p + f + u] = coeff(p, f, u))));
+  const evalAssign = (kws, assign) => { const m = U.map(() => U.map(() => 0)); kws.forEach((kw, i) => U.forEach((f, a) => U.forEach((u, b) => { if (a !== b) m[a][b] += kw * cm[assign[i] + f + u]; }))); return m; };
+  const maxOf = m => Math.max(...m.flat());
+  const cache = new Map();
+  function best(kws) {
+    const key = kws.join(","); if (cache.has(key)) return cache.get(key);
+    let bestV = Infinity, bestA = null; const cur = new Array(kws.length);
+    const loads = U.map(() => U.map(() => 0));
+    (function rec(i) {
+      if (i === kws.length) { const v = maxOf(loads); if (v < bestV - 1e-9) { bestV = v; bestA = cur.slice(); } return; }
+      for (const p of PAIRS) {
+        cur[i] = p; const add = []; U.forEach((f, a) => U.forEach((u, b) => { if (a !== b) { const d = kws[i] * cm[p + f + u]; loads[a][b] += d; add.push([a, b, d]); } }));
+        if (maxOf(loads) < bestV - 1e-9) rec(i + 1);
+        add.forEach(([a, b, d]) => loads[a][b] -= d);
+      }
+    })(0);
+    const out = { assign: bestA, mf: bestV }; cache.set(key, out); return out;
+  }
+  let step = 0;
+  const stage = h("div", "stage top");
+  const grid = h("div", "grid2"), bars = h("div"); stage.append(grid, bars);
+  const ctrls = h("div", "controls", '<span>Cuts and kW come from the previous page.</span>');
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const info = () => {
+    const gr = groupRows(), T = sum(S.P);
+    const res = gr.map(kws => { const b = best(kws); const naive = kws.map(() => "AB"); return { kws, b, naiveM: maxOf(evalAssign(kws, naive)), total: sum(kws) }; });
+    const M = Math.max(...res.map(r => r.b.mf)), LB = (T / G) / (4 - 1);
+    return { res, M, LB, T, naiveM: Math.max(...res.map(r => r.naiveM)) };
+  };
+  const panel = makePanel("Objective: minimise the worst case", "min M such that M is above every possible post-failure UPS load.", [
+    { at: 0, html: () => `For each group, fail each UPS in turn; each surviving UPS then carries some load. Every cell below is one such load (kW).` },
+    { at: 1, html: () => `<span class="f">M &ge; &Sigma; c[s,f,u] &middot; kW &middot; q[i,g,s]</span> &nbsp; for every group g, every failed f, every survivor u.<br><span class="note">${G} groups &times; 4 &times; 3 = ${G * 12} constraints. Objective: <b>minimise M</b> (+ a tiny &epsilon;&middot;&Sigma;loads tie-break).</span>` },
+    { at: 2, html: () => { const k = info(); return `q[i,g,s] = 1 chooses each row's UPS pair. Naive (every row on AB): <span class="v">${fmt(k.naiveM, 0)} kW</span>. Best pairing: <span class="big">${fmt(k.M, 0)} kW</span>`; } },
+    { at: 3, html: () => { const k = info(), g = k.res.findIndex(r => Math.abs(r.b.mf - k.M) < 1e-6); return `M* = max over groups = <span class="v">${fmt(k.M, 1)} kW</span>. The bottleneck is <b>group ${g + 1}</b>. Its failure load sizes every UPS in the hall.`; } },
+    { at: 4, html: () => { const k = info(); return `Even with perfect balance: <span class="f">LB = (&Sigma;P / G) / (n&minus;1) = (${fmt(k.T, 0)} / ${G}) / 3</span> = <span class="v">${fmt(k.LB, 1)} kW</span>.<br><b>Gap</b> = (M* &minus; LB) / M* = <span class="v">${fmt((k.M - k.LB) / k.M * 100, 1)}%</span><br><span class="note">Gap = how far the answer could still be from the best possible. 0% means proven optimal.</span>`; } },
+  ]);
+
+  function update(st) {
+    step = st;
+    const k = info(), g0 = k.res.findIndex(r => Math.abs(r.b.mf - k.M) < 1e-6);
+    grid.replaceChildren();
+    k.res.forEach((r, gi) => {
+      const assign = st >= 2 ? r.b.assign : r.kws.map(() => "AB"), m = evalAssign(r.kws, assign), mx = maxOf(m);
+      const card = h("div", "gcard" + (st >= 3 && gi === g0 ? " hot" : ""));
+      card.append(h("h4", null, `<span class="dot" style="background:${COLORS[gi]}"></span>Group ${gi + 1} &middot; ${r.kws.length} rows &middot; &Sigma;P = ${r.total} kW`));
+      const t = h("table", "mat heat"); t.append(h("tr", null, "<th></th>" + U.map(u => `<th>${u}</th>`).join("")));
+      m.forEach((rw, a) => { const tr = h("tr"); tr.append(h("td", "lab", "f=" + U[a])); rw.forEach((v, b) => { const td = h("td", a === b ? "diag" : ""); td.textContent = a === b ? "-" : fmt(v, 0); if (a !== b) { td.style.background = `rgba(245,165,36,${.08 + .55 * v / (mx || 1)})`; td.style.color = "#e8eaed"; if (st >= 1 && Math.abs(v - mx) < 1e-9) td.classList.add("max"); } tr.append(td); }); t.append(tr); });
+      card.append(t, h("div", "tagr", `rows: ${r.kws.map((kw, i) => `${kw}&rarr;${assign[i]}`).join(", ")}<br>max-fail <b style="color:var(--amber)">${fmt(mx, 0)} kW</b>`));
+      grid.append(card);
+    });
+    const mxBar = Math.max(k.naiveM, k.M, k.LB) * 1.05;
+    const mk = (at, label, v, c) => h("div", "lbar" + (st >= at ? " on" : ""), `<div class="t">${label}</div><div class="tr"><div style="width:${v / mxBar * 100}%;background:${c}"></div></div><div class="num">${fmt(v, 0)} kW</div>`);
+    bars.replaceChildren(mk(2, "naive pairing (all on AB)", k.naiveM, "#5b616c"), mk(2, "optimised  M*", k.M, "#f5a524"), mk(4, "theoretical lower bound", k.LB, "#2dd4bf"));
+    panel.update(st);
+  }
+  return { id: "objective", name: "Minimise M", steps: ["Fail one UPS", "M >= every cell", "Best pairing", "Bottleneck", "Bound & gap"], nodes: [wrap, panel], update };
+})();
+
+/* =========================================================
+   MODULE 5 - Simplex (2 variables)
+   ========================================================= */
+const E = (() => {
+  const CONS = [[1, 1, 4, "x + y ≥ 4"], [1, 3, 6, "x + 3y ≥ 6"], [3, 1, 6, "3x + y ≥ 6"]];
+  const BOX = 6; let cx = 2, cy = 3, step = 0;
+  function region() {
+    let poly = [[0, 0], [BOX, 0], [BOX, BOX], [0, BOX]];
+    for (const [a, b, c] of CONS) {
+      const out = [];
+      for (let i = 0; i < poly.length; i++) {
+        const P = poly[i], Q = poly[(i + 1) % poly.length], fp = a * P[0] + b * P[1] - c, fq = a * Q[0] + b * Q[1] - c;
+        if (fp >= -1e-9) out.push(P);
+        if ((fp >= 0) !== (fq >= 0) && Math.abs(fp - fq) > 1e-12) { const t = fp / (fp - fq); out.push([P[0] + t * (Q[0] - P[0]), P[1] + t * (Q[1] - P[1])]); }
+      }
+      poly = out;
+    }
+    return poly.filter((p, i) => !poly.some((q, j) => j < i && Math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6));
+  }
+  const z = p => cx * p[0] + cy * p[1];
+  function walk(V) {
+    let i = V.indexOf(V.reduce((a, b) => z(b) > z(a) ? b : a)); const path = [i];
+    for (;;) {
+      const nb = [(i + 1) % V.length, (i + V.length - 1) % V.length].sort((a, b) => z(V[a]) - z(V[b]))[0];
+      if (z(V[nb]) < z(V[i]) - 1e-9) { i = nb; path.push(i); } else break;
+    }
+    return path;
+  }
+  const W = 640, Hh = 520, ox = 60, oy = 470, sc = 70, X = x => ox + x * sc, Y = y => oy - y * sc;
+  const svg = s("svg", { viewBox: `0 0 ${W} ${Hh}`, width: "100%", style: "max-height:100%" });
+  const stage = h("div", "stage"); stage.append(svg);
+  const ctrls = h("div", "controls");
+  const cl1 = ctl(ctrls, 'c<sub>x</sub> <input type="range" min="1" max="6" value="2"> <output id="e1"></output>');
+  const cl2 = ctl(ctrls, 'c<sub>y</sub> <input type="range" min="1" max="6" value="3"> <output id="e2"></output>');
+  ctrls.append(h("span", null, "objective: minimise z = c<sub>x</sub>&middot;x + c<sub>y</sub>&middot;y"));
+  $("input", cl1).oninput = e => { cx = +e.target.value; update(step); }; $("input", cl2).oninput = e => { cy = +e.target.value; update(step); };
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const panel = makePanel("Simplex: walk along the corners", "Why an LP optimum always sits at a corner.", [
+    { at: 0, html: () => `Each constraint cuts the plane with a straight line. What is left (amber) is the <b>feasible region</b>: every point that obeys all constraints.<br><span class="note">${CONS.map(c => c[3]).join(" &nbsp;|&nbsp; ")} &nbsp;|&nbsp; x,y &le; ${BOX}</span>` },
+    { at: 1, html: () => { const V = region(); return `The best answer of a linear objective is always at a <b>corner</b>. This region has <span class="v">${V.length}</span> corners (vertices). Each is where 2 constraint lines meet.`; } },
+    { at: 2, html: () => `Minimise <span class="f">z = ${cx}x + ${cy}y</span>. The dashed line is a level set (all points with the same z). Sliding it toward lower z, the last corner it touches is the optimum.` },
+    { at: 3, html: () => { const V = region(), p = walk(V); return `Simplex does not check every corner. It starts at one and hops along an <b>edge</b> to a neighbouring corner that lowers z:<br>` + p.map(i => `<span class="f">(${fmt(V[i][0], 1)}, ${fmt(V[i][1], 1)})</span> z = <span class="v">${fmt(z(V[i]), 1)}</span>`).join("<br>&darr; "); } },
+    { at: 4, html: () => { const V = region(), p = walk(V), o = V[p[p.length - 1]]; return `No neighbour is lower, so stop: optimum at <span class="big">(${fmt(o[0], 1)}, ${fmt(o[1], 1)})</span> with z = <span class="v">${fmt(z(o), 1)}</span>.<br><span class="note">CBC does this in hundreds of dimensions (every t, y, q is a coordinate) for each branch-and-bound node.</span>`; } },
+  ]);
+
+  function update(st) {
+    step = st; svg.replaceChildren();
+    $("#e1").textContent = cx; $("#e2").textContent = cy;
+    const V = region(), path = walk(V);
+    const grid = s("g", { class: "grid" }, svg);
+    for (let i = 0; i <= BOX; i++) { s("line", { x1: X(i), x2: X(i), y1: Y(0), y2: Y(BOX), }, grid); s("line", { x1: X(0), x2: X(BOX), y1: Y(i), y2: Y(i) }, grid); s("text", { x: X(i), y: Y(0) + 18, fill: "#5b616c", "font-size": 12, "text-anchor": "middle" }, svg).textContent = i; s("text", { x: X(0) - 12, y: Y(i) + 4, fill: "#5b616c", "font-size": 12, "text-anchor": "middle" }, svg).textContent = i; }
+    s("text", { x: X(BOX) + 24, y: Y(0) + 4, fill: "#8b919c", "font-size": 14 }, svg).textContent = "x";
+    s("text", { x: X(0) - 4, y: Y(BOX) - 12, fill: "#8b919c", "font-size": 14 }, svg).textContent = "y";
+    CONS.forEach(([a, b, c, lab]) => {
+      const pts = []; if (b) { pts.push([0, c / b]); pts.push([BOX, (c - a * BOX) / b]); }
+      const q = [[0, c / b], [c / a, 0]]; s("line", { x1: X(q[0][0]), y1: Y(q[0][1]), x2: X(q[1][0]), y2: Y(q[1][1]), stroke: "#5b616c", "stroke-width": 1.5, "stroke-dasharray": "4 4" }, svg);
+      s("text", { x: X(q[1][0]) + 6, y: Y(0) - 8, fill: "#8b919c", "font-size": 12 }, svg).textContent = lab;
+    });
+    s("polygon", { points: V.map(p => `${X(p[0])},${Y(p[1])}`).join(" "), fill: "#f5a524", "fill-opacity": st >= 0 ? .14 : 0, stroke: "#f5a524", "stroke-width": 2.5 }, svg);
+    const cur = st >= 4 ? path[path.length - 1] : st >= 3 ? path[0] : -1;
+    if (st >= 2) {
+      const showAt = st >= 4 ? V[path[path.length - 1]] : V[path[0]], zz = z(showAt);
+      const pts = []; for (const x of [0, BOX]) pts.push([x, (zz - cx * x) / cy]);
+      s("line", { x1: X(pts[0][0]), y1: Y(pts[0][1]), x2: X(pts[1][0]), y2: Y(pts[1][1]), stroke: "#2dd4bf", "stroke-width": 2.5, "stroke-dasharray": "8 6" }, svg);
+      const m = Math.hypot(cx, cy), gx = -cx / m * 60, gy = -cy / m * 60, ax = X(2.6), ay = Y(4.6);
+      s("line", { x1: ax, y1: ay, x2: ax + gx, y2: ay - gy, stroke: "#2dd4bf", "stroke-width": 3, "marker-end": "url(#ar)" }, svg);
+      s("text", { x: ax + 12, y: ay - 14, fill: "#2dd4bf", "font-size": 13, "font-weight": 700 }, svg).textContent = "z decreases";
+      s("text", { x: X(0) + 8, y: Y(0) - 30, fill: "#2dd4bf", "font-size": 13 }, svg).textContent = `z = ${fmt(zz, 1)}`;
+    }
+    const defs = s("defs", {}, svg); const mk = s("marker", { id: "ar", markerWidth: 8, markerHeight: 8, refX: 6, refY: 4, orient: "auto" }, defs); s("path", { d: "M0,0 L8,4 L0,8 z", fill: "#2dd4bf" }, mk);
+    if (st >= 3 && path.length > 1) {
+      const pl = s("polyline", { points: path.map(i => `${X(V[i][0])},${Y(V[i][1])}`).join(" "), fill: "none", stroke: "#fb7185", "stroke-width": 4, "stroke-linecap": "round", "stroke-linejoin": "round", pathLength: 1, "stroke-dasharray": 1, "stroke-dashoffset": st === 3 ? 1 : 0, style: "transition:stroke-dashoffset 1.6s ease" }, svg);
+      if (st === 3) requestAnimationFrame(() => requestAnimationFrame(() => pl.setAttribute("stroke-dashoffset", 0)));
+    }
+    if (st >= 1) V.forEach((p, i) => {
+      const onPath = st >= 3 && path.includes(i), isOpt = st >= 4 && i === path[path.length - 1];
+      s("circle", { cx: X(p[0]), cy: Y(p[1]), r: isOpt ? 11 : 7, fill: isOpt ? "#2dd4bf" : onPath ? "#fb7185" : "#e8eaed", stroke: "#0a0b0d", "stroke-width": 2 }, svg);
+      s("text", { x: X(p[0]) + 12, y: Y(p[1]) + (p[1] > BOX - .5 ? 18 : -10), fill: isOpt ? "#2dd4bf" : "#e8eaed", "font-size": 13, "font-family": "ui-monospace,monospace" }, svg).textContent = `(${fmt(p[0], 1)},${fmt(p[1], 1)}) z=${fmt(z(p), 1)}`;
+    });
+    panel.update(st);
+  }
+  return { id: "simplex", name: "Simplex", steps: ["Feasible region", "Corners", "Objective", "Walk the edges", "Optimal"], nodes: [wrap, panel], update };
+})();
+
+/* =========================================================
+   MODULE 6 - Branch and bound
+   ========================================================= */
+/* small dense two-phase simplex, used for every node's LP relaxation */
+function lp(c, rows) {
+  const n = c.length, m = rows.length, EPS = 1e-9;
+  rows = rows.map(r => r.b < 0 ? { a: r.a.map(v => -v), op: r.op === "<=" ? ">=" : r.op === ">=" ? "<=" : "=", b: -r.b } : r);
+  let ns = 0, na = 0; rows.forEach(r => { if (r.op !== "=") ns++; if (r.op !== "<=") na++; });
+  const Wd = n + ns + na, T = [], basis = []; let si = n, ai = n + ns;
+  rows.forEach(r => {
+    const row = new Array(Wd + 1).fill(0); r.a.forEach((v, j) => row[j] = v); row[Wd] = r.b;
+    if (r.op === "<=") { row[si] = 1; basis.push(si); si++; }
+    else if (r.op === ">=") { row[si] = -1; si++; row[ai] = 1; basis.push(ai); ai++; }
+    else { row[ai] = 1; basis.push(ai); ai++; }
+    T.push(row);
+  });
+  const pivot = (l, e) => { const pv = T[l][e]; for (let j = 0; j <= Wd; j++) T[l][j] /= pv; for (let i = 0; i < m; i++) if (i !== l) { const f = T[i][e]; if (Math.abs(f) > EPS) for (let j = 0; j <= Wd; j++) T[i][j] -= f * T[l][j]; } basis[l] = e; };
+  function run(cost, allowed) {
+    for (let it = 0; it < 5000; it++) {
+      let enter = -1;
+      for (let j = 0; j < Wd && enter < 0; j++) { if (!allowed(j)) continue; let zz = cost[j]; for (let i = 0; i < m; i++) zz -= cost[basis[i]] * T[i][j]; if (zz < -EPS) enter = j; }
+      if (enter < 0) return "ok";
+      let leave = -1, best = Infinity;
+      for (let i = 0; i < m; i++) if (T[i][enter] > EPS) { const r = T[i][Wd] / T[i][enter]; if (r < best - EPS || (Math.abs(r - best) <= EPS && leave >= 0 && basis[i] < basis[leave])) { best = r; leave = i; } }
+      if (leave < 0) return "unbounded";
+      pivot(leave, enter);
+    }
+    return "iter";
+  }
+  const c1 = new Array(Wd).fill(0); for (let j = n + ns; j < Wd; j++) c1[j] = 1;
+  run(c1, () => true);
+  let inf = 0; for (let i = 0; i < m; i++) if (basis[i] >= n + ns) inf += T[i][Wd];
+  if (inf > 1e-7) return { status: "infeasible" };
+  for (let i = 0; i < m; i++) if (basis[i] >= n + ns) { let e = -1; for (let j = 0; j < n + ns; j++) if (Math.abs(T[i][j]) > 1e-9) { e = j; break; } if (e >= 0) pivot(i, e); }
+  const c2 = new Array(Wd).fill(0); c.forEach((v, j) => c2[j] = v);
+  if (run(c2, j => j < n + ns) !== "ok") return { status: "fail" };
+  const x = new Array(n).fill(0); for (let i = 0; i < m; i++) if (basis[i] < n) x[basis[i]] = T[i][Wd];
+  return { status: "optimal", x, obj: c.reduce((a, v, j) => a + v * x[j], 0) };
+}
+/* the grouping model of engine/optimization.py, reduced to the t / M part (pairing left out) */
+function groupModel(P, Gn) {
+  const Rn = P.length, nt = Rn * (Gn - 1), n = nt + 1, tv = (i, g) => i * (Gn - 1) + (g - 1), Mi = nt, rows = [], T = sum(P), z0 = () => new Array(n).fill(0);
+  for (let g = 1; g < Gn; g++) for (let i = 0; i < Rn - 1; i++) { const a = z0(); a[tv(i, g)] = 1; a[tv(i + 1, g)] = -1; rows.push({ a, op: ">=", b: 0 }); }
+  for (let g = 1; g < Gn - 1; g++) for (let i = 0; i < Rn; i++) { const a = z0(); a[tv(i, g + 1)] = 1; a[tv(i, g)] = -1; rows.push({ a, op: ">=", b: 0 }); }
+  for (let g = 1; g < Gn; g++) for (let i = 0; i < Rn; i++) { const a = z0(); a[tv(i, g)] = 1; rows.push({ a, op: "<=", b: 1 }); }
+  for (let g = 1; g <= Gn; g++) {
+    const a = z0(); a[Mi] = 1;
+    if (g === Gn) { for (let i = 0; i < Rn; i++) a[tv(i, Gn - 1)] += P[i]; rows.push({ a, op: ">=", b: T }); }
+    else { for (let i = 0; i < Rn; i++) { a[tv(i, g)] -= P[i]; if (g > 1) a[tv(i, g - 1)] += P[i]; } rows.push({ a, op: ">=", b: 0 }); }
+  }
+  const c = z0(); c[Mi] = 1; return { c, rows, n, nt, tv, Mi, T };
+}
+function branchBound(P, Gn) {
+  const md = groupModel(P, Gn); let UB = Infinity, inc = null; const nodes = [], stack = [], order = [];
+  const mk = (parent, fix, via) => { const nd = { id: nodes.length, parent, fix, via, children: [], depth: parent == null ? 0 : nodes[parent].depth + 1, pb: parent == null ? -Infinity : nodes[parent].lb }; nodes.push(nd); if (parent != null) nodes[parent].children.push(nd.id); return nd; };
+  stack.push(mk(null, {}, null));
+  while (stack.length && nodes.length < 400) {
+    const nd = stack.pop(), rows = md.rows.slice();
+    for (const k in nd.fix) { const a = new Array(md.n).fill(0); a[+k] = 1; rows.push({ a, op: nd.fix[k] ? ">=" : "<=", b: nd.fix[k] ? 1 : 0 }); }
+    const r = lp(md.c, rows);
+    if (r.status !== "optimal") { nd.status = "infeasible"; nd.lb = Infinity; }
+    else {
+      nd.lb = r.obj; nd.x = r.x;
+      if (r.obj >= UB - 1e-7) nd.status = "pruned";
+      else {
+        let bk = -1, bf = 1e-6;
+        for (let k = 0; k < md.nt; k++) { const f = Math.min(r.x[k], 1 - r.x[k]); if (f > bf) { bf = f; bk = k; } }
+        if (bk < 0) { nd.status = "incumbent"; UB = r.obj; inc = r.x.slice(0, md.nt).map(Math.round); }
+        else { nd.status = "branched"; nd.bk = bk; const c0 = mk(nd.id, { ...nd.fix, [bk]: 0 }, { k: bk, v: 0 }), c1 = mk(nd.id, { ...nd.fix, [bk]: 1 }, { k: bk, v: 1 }); stack.push(c0); stack.push(c1); }
+      }
+    }
+    order.push({ id: nd.id, UB });
+  }
+  return { nodes, order, UB, md };
+}
+
+const F = (() => {
+  let P = [100, 470, 220, 180, 390, 310, 230], bbres = branchBound(P, G), step = 0, timer = null;
+  const tName = k => `t[${Math.floor(k / (G - 1)) + 1},${k % (G - 1) + 1}]`;
+  const stage = h("div", "stage top"); const svgHost = h("div"); stage.append(svgHost);
+  const ctrls = h("div", "controls");
+  const play = btn(ctrls, "▶ Auto-play", () => { if (timer) { stop(); return; } play.classList.add("on"); timer = setInterval(() => { if (MODS[mi] !== M || step >= M.steps.length - 1) stop(); else go(mi, step + 1); }, 1100); });
+  const stop = () => { clearInterval(timer); timer = null; play.classList.remove("on"); };
+  btn(ctrls, "New rows", () => {
+    stop();
+    for (let k = 0; k < 200; k++) { const p = Array.from({ length: 7 }, () => 100 + 10 * Math.floor(Math.random() * 41)), r = branchBound(p, G); if (r.nodes.length >= 9 && r.nodes.length <= 21 && r.nodes.some(n => n.status === "pruned")) { P = p; bbres = r; break; } }
+    M.steps = mkSteps(); go(mi, 0);
+  });
+  ctrls.append(h("span", null, `rows kW: <b id="fp"></b> &nbsp; groups G = ${G}`));
+  const wrap = h("div", "stagewrap"); wrap.append(stage, ctrls);
+
+  const aside = h("aside");
+  aside.append(h("h2", null, "Branch and bound"), h("div", "sub", "LP relaxation, branch on a fractional t, keep the best, drop what cannot win."));
+  const intro = h("div", "line"); aside.append(intro);
+  const fc = h("div", "fc");
+  const boxes = {};
+  const mkb = (key, text) => { const b = h("div", "fcb", text); boxes[key] = b; return b; };
+  const arr = () => h("div", "fcarrow", "&#9660;");
+  fc.append(mkb("lp", "1. Solve the LP relaxation (t may be 0&ndash;1) &rarr; LB of this node"), arr(), mkb("chk", "2. Infeasible, or LB &ge; UB (best integer M so far)?"), arr(), mkb("int", "3. Are all t integers (0 or 1)?"), arr(), mkb("br", "4. No &rarr; branch on a fractional t: two children, t = 0 and t = 1"));
+  const ends = h("div", "fc"); ends.append(mkb("prune", "Yes at 2: <b>prune</b> (cut this branch)"), mkb("inc", "Yes at 3: <b>new incumbent</b>, UB = M"));
+  const stat = h("div", "stat", '<div><small>UB (best found)</small><b id="sUB">-</b></div><div><small>LB (best possible)</small><b id="sLB">-</b></div><div><small>Gap</small><b id="sGap">-</b></div>');
+  const gapbar = h("div", "gapbar", '<div style="width:100%"></div>');
+  const detail = h("div", "line on"); const legend = h("div", "small");
+  legend.innerHTML = "<b>Gap</b> = (UB &minus; LB) / UB. UB only goes down when a better integer solution appears; LB only goes up as weak branches are closed. When they meet, gap = 0 and the answer is proven optimal.";
+  aside.append(fc, ends, stat, gapbar, detail, legend);
+  const panel = aside;
+
+  const mkSteps = () => ["Setup", ...bbres.order.map((_, i) => "#" + (i + 1))];
+  const layout = () => {
+    const nodes = bbres.nodes; let leaf = 0; const pos = {};
+    (function rec(id) { const n = nodes[id]; if (!n.children.length) { pos[id] = { x: leaf++ * 128 + 70, y: n.depth * 96 + 50 }; return; } n.children.forEach(rec); pos[id] = { x: n.children.reduce((a, c) => a + pos[c].x, 0) / n.children.length, y: n.depth * 96 + 50 }; })(0);
+    return pos;
+  };
+  let pos = layout();
+
+  function update(st) {
+    step = st;
+    const { nodes, order, md } = bbres, done = new Set(order.slice(0, st).map(o => o.id)), cur = st > 0 ? order[st - 1].id : -1;
+    $("#fp").textContent = P.join(", ");
+    const UB = st > 0 ? order[st - 1].UB : Infinity;
+    const vis = n => n.id === 0 ? st >= 0 : done.has(n.parent);
+    const pend = nodes.filter(n => vis(n) && !done.has(n.id) && st > 0);
+    let LB = st === 0 ? NaN : pend.length ? Math.min(...pend.map(n => n.pb)) : UB;
+    if (isFinite(UB)) LB = Math.min(LB, UB);
+    const gap = isFinite(UB) && isFinite(LB) ? (UB - LB) / UB : null;
+    $("#sUB").textContent = isFinite(UB) ? fmt(UB, 0) : "-"; $("#sLB").textContent = isFinite(LB) ? fmt(LB, 0) : "-";
+    $("#sGap").textContent = gap == null ? "-" : fmt(gap * 100, 1) + "%";
+    $("div", gapbar).style.width = gap == null ? "100%" : Math.min(100, gap * 100 * 4) + "%";
+    // tree
+    const maxX = Math.max(...Object.values(pos).map(p => p.x)) + 70, maxY = Math.max(...Object.values(pos).map(p => p.y)) + 50;
+    svgHost.replaceChildren(); const svg = s("svg", { viewBox: `0 0 ${maxX} ${maxY}`, width: "100%", style: "max-height:560px" }, svgHost);
+    nodes.forEach(n => { if (n.parent == null || !vis(n)) return; const a = pos[n.parent], b = pos[n.id]; s("line", { x1: a.x, y1: a.y + 26, x2: b.x, y2: b.y - 26, stroke: "#3a3f49", "stroke-width": 2 }, svg); const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; s("text", { x: mx, y: my + 4, fill: "#8b919c", "font-size": 12, "font-family": "ui-monospace,monospace", "text-anchor": "middle", style: "paint-order:stroke;stroke:#121418;stroke-width:5px" }, svg).textContent = `${tName(n.via.k)}=${n.via.v}`; });
+    const ST = { branched: ["#171a1f", "#f5a524"], incumbent: ["#14352a", "#2dd4bf"], pruned: ["#1b1d22", "#5b616c"], infeasible: ["#2a1519", "#fb7185"] };
+    nodes.forEach(n => {
+      if (!vis(n)) return; const p = pos[n.id], d = done.has(n.id), c = d ? ST[n.status] : ["#121418", "#333843"];
+      const g = s("g", { class: "tnode" }, svg);
+      s("rect", { x: p.x - 56, y: p.y - 26, width: 112, height: 52, rx: 10, fill: c[0], stroke: n.id === cur ? "#f5a524" : c[1], "stroke-width": n.id === cur ? 4 : 2, "stroke-dasharray": d ? "" : "4 4" }, g);
+      if (!d) { s("text", { x: p.x, y: p.y + 5, fill: "#5b616c", "font-size": 13, "text-anchor": "middle" }, g).textContent = "pending"; return; }
+      s("text", { x: p.x, y: p.y - 6, fill: "#e8eaed", "font-size": 13, "font-weight": 700, "text-anchor": "middle" }, g).textContent = `#${order.findIndex(o => o.id === n.id) + 1}  LB ${n.status === "infeasible" ? "-" : fmt(n.lb, 0)}`;
+      const lab = { branched: "fractional → branch", incumbent: "integer! UB = " + fmt(n.lb, 0), pruned: "pruned ✕ (≥ UB)", infeasible: "infeasible" }[n.status];
+      s("text", { x: p.x, y: p.y + 14, fill: c[1], "font-size": 11, "text-anchor": "middle" }, g).textContent = lab;
+    });
+    // panel
+    intro.classList.add("on");
+    intro.innerHTML = st === 0 ? `Real model has binary <b>t</b> (and q). Dropping "must be 0 or 1" gives an LP that simplex solves fast; its optimum is a <b>lower bound</b> on M. Here: ${P.length} rows, ${G} groups, total ${sum(P)} kW, root LB = <span class="v">${fmt(nodes[0].lb, 1)}</span> (= total / G).` : "";
+    intro.style.display = st === 0 ? "" : "none";
+    Object.values(boxes).forEach(b => b.className = b.className.replace(/ (hit|end|endp|endg)/g, ""));
+    if (st > 0) {
+      const n = nodes[cur]; boxes.lp.classList.add("hit");
+      if (n.status === "pruned" || n.status === "infeasible") { boxes.chk.classList.add("hit"); boxes.prune.classList.add("hit", "endp"); }
+      else { boxes.chk.classList.add("hit"); boxes.int.classList.add("hit"); if (n.status === "incumbent") boxes.inc.classList.add("hit", "endg"); else boxes.br.classList.add("hit", "end"); }
+      let txt = `<b>Node #${st}</b> `; const fx = Object.keys(n.fix).map(k => `${tName(+k)}=${n.fix[k]}`).join(", ");
+      txt += fx ? `(fixed: ${fx})<br>` : "(root, nothing fixed)<br>";
+      if (n.status === "infeasible") txt += "LP has no solution &rarr; prune.";
+      else {
+        txt += `LP gives M = <span class="v">${fmt(n.lb, 1)}</span>. `;
+        if (n.status === "pruned") txt += `LB &ge; UB (${fmt(UB, 0)}), so nothing below can win &rarr; <b>prune</b>.`;
+        else if (n.status === "incumbent") { const inG = (g, i) => g === 0 ? n.x[md.tv(i, 1)] > .5 : g === 1 ? (n.x[md.tv(i, 1)] < .5 && n.x[md.tv(i, 2)] > .5) : n.x[md.tv(i, 2)] < .5; txt += `All t are 0/1 &rarr; a real grouping: groups ${[0, 1, 2].map(g => fmt(sum(P.filter((_, i) => inG(g, i))), 0)).join(" / ")} kW. New best, <b>UB = ${fmt(n.lb, 0)}</b>.`; }
+        else txt += `Fractional: <span class="v">${tName(n.bk)} = ${fmt(n.x[n.bk], 2)}</span> &rarr; split into ${tName(n.bk)}=0 and ${tName(n.bk)}=1.`;
+        txt += `<table class="tmini"><tr><th></th><th>t[i,1]</th><th>t[i,2]</th></tr>` + P.map((_, i) => `<tr><td>R${i + 1}</td>` + [0, 1].map(g => { const k = md.tv(i, g + 1), v = n.x[k], fr = Math.min(v, 1 - v) > 1e-6; return `<td class="${fr ? "fr" : ""}${k === n.bk ? " bk2" : ""}">${fmt(Math.abs(v) < 5e-7 ? 0 : v, 2)}</td>`; }).join("") + "</tr>").join("") + "</table>";
+      }
+      if (gap != null && gap <= 0.01 && gap > 1e-9) txt += `<br><span class="badge">gap &le; 1%: CBC (gapRel = 0.01) would stop here</span>`;
+      if (st === order.length) txt += `<br><span class="badge">tree closed: gap 0%, proven optimal</span>`;
+      detail.innerHTML = txt; detail.style.display = "";
+    } else detail.style.display = "none";
+  }
+  const M = { id: "bnb", name: "Branch & bound", steps: mkSteps(), nodes: [wrap, panel], update };
+  return M;
+})();
+// keep the dots refreshed after "New rows"
+const MODS = [A, B, C, D, E, F];
+let mi = 0, st = 0;
+const nav = $("#nav"), main = $("#main"), dots = $("#dots");
+MODS.forEach((m, i) => {
+  const b = h("button", null, `<b>${i + 1}</b>${m.name}`); b.onclick = () => go(i, 0); nav.append(b); m.btn = b;
+  m.root = h("section", "module"); m.root.append(...m.nodes); main.append(m.root);
+});
+function go(i, s0) {
+  mi = i; st = s0; const m = MODS[mi];
+  MODS.forEach(x => { x.root.classList.toggle("on", x === m); x.btn.classList.toggle("on", x === m); });
+  dots.replaceChildren(...m.steps.map((t, k) => { const d = h("span", null, `${k + 1}. ${t}`); if (m.steps.length > 8) d.textContent = t; d.onclick = () => go(mi, k); d.className = k < st ? "done" : k === st ? "cur" : ""; return d; }));
+  m.update(st);
+  history.replaceState(null, "", `#${m.id}-${st}`);
+}
+function next() { const m = MODS[mi]; if (st < m.steps.length - 1) go(mi, st + 1); else if (mi < MODS.length - 1) go(mi + 1, 0); }
+function prev() { if (st > 0) go(mi, st - 1); else if (mi > 0) go(mi - 1, MODS[mi - 1].steps.length - 1); }
+$("#next").onclick = next; $("#prev").onclick = prev;
+addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; e.target.blur(); }
+  if (e.key === "ArrowRight" || e.key === "PageDown") next();
+  else if (e.key === "ArrowLeft" || e.key === "PageUp") prev();
+  else if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); next(); }
+  else if (/^[1-6]$/.test(e.key)) go(+e.key - 1, 0);
+  else if (e.key.toLowerCase() === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+});
+MODS.forEach(m => m.update(0));
+const hm = location.hash.match(/#(\w+)-(\d+)/), start = hm ? MODS.findIndex(m => m.id === hm[1]) : -1;
+start >= 0 ? go(start, Math.min(+hm[2], MODS[start].steps.length - 1)) : go(0, 0);
+</script>
+</body>
+</html>
