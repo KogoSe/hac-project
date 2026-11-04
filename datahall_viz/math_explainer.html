@@ -458,6 +458,44 @@ footer button{white-space:nowrap}
 .gsum span.top{border-color:var(--amber)}
 .gsum b{color:var(--amber);font-family:var(--mono)}
 .gsum .mm{border-color:var(--amber);color:var(--text)}
+
+/* ---- v9: drag M, conservation column, summary ---- */
+.heat td.viol{background:rgba(251,113,133,.38)!important;color:#fecdd3!important;outline:1px solid var(--rose);transition:none}
+.mbar{display:flex;align-items:center;gap:14px;justify-content:center;margin-top:12px;opacity:0;transition:opacity .5s;pointer-events:none;flex-wrap:wrap}
+.mbar.on{opacity:1;pointer-events:auto}
+.mbar .mt{font-size:14px;color:var(--mute)}
+.mbar .mt b{font-family:var(--mono);color:var(--amber);font-size:18px}
+.mbar input{width:320px}
+.mbar button{background:var(--panel2);color:var(--text);border:1px solid var(--line2);border-radius:8px;padding:5px 14px;font:600 13px var(--sans);cursor:pointer}
+.mbar button:hover{border-color:var(--amber)}
+.mat th.sumh{color:var(--violet);padding-left:12px}
+.mat td.sumc{background:none;color:var(--violet);font-size:13px;padding-left:12px;text-align:left;min-width:90px}
+.mat td.sumc.ok{color:var(--teal)}
+.chain{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.chain .ar{color:var(--dim)}
+.chip2{padding:7px 14px;border-radius:20px;border:1px solid var(--line2);color:var(--dim);font:600 13px var(--sans);transition:.5s}
+.chip2.on{color:var(--text);border-color:var(--mute)}
+.chip2.cur{background:var(--amber);color:#111;border-color:var(--amber)}
+.sgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.scard{background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:14px 18px;opacity:.15;transform:translateY(12px);transition:opacity .6s,transform .6s,border-color .5s,box-shadow .5s}
+.scard.on{opacity:.75;transform:none}
+.scard.cur{opacity:1;border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 8px 30px rgba(245,165,36,.12)}
+.scard .sh{display:flex;justify-content:space-between;margin-bottom:8px;font-size:15px}
+.scard .sf{font:italic 20px "Cambria Math","STIX Two Math","Times New Roman",serif;color:var(--amber);min-height:44px;display:flex;align-items:center}
+.scard .st{font-size:13px;color:var(--mute);line-height:1.5;margin:6px 0 10px}
+.scard button{background:none;color:var(--mute);border:1px solid var(--line2);border-radius:8px;padding:4px 12px;font:600 12px var(--sans);cursor:pointer;transition:.25s}
+.scard button:hover{color:var(--text);border-color:var(--amber)}
+.grid2{grid-template-columns:repeat(3,1fr)!important;gap:12px!important}
+.gcard{padding:10px 10px!important}
+.gcard .heat td{min-width:36px!important;height:26px!important;font-size:12px!important}
+.sgrid{gap:10px}
+.scard{padding:10px 16px}
+.scard .sh{align-items:center;margin-bottom:4px}
+.scard .sf{font-size:18px;min-height:34px}
+.scard .sf sub,.scard .sf sup{font-size:.62em;line-height:0}
+.scard .sf .sumop,.scard .sf .frac{font-size:.9em}
+.scard .st{font-size:12px;line-height:1.4;margin:4px 0 0}
+.chain{margin-bottom:10px}
 </style>
 </head>
 <body>
@@ -469,7 +507,7 @@ footer button{white-space:nowrap}
 <footer>
   <button id="prev">&larr; Back</button>
   <div class="dots" id="dots"></div>
-  <span class="hint">&larr; &rarr; step &nbsp;|&nbsp; 1-7 module &nbsp;|&nbsp; F fullscreen</span>
+  <span class="hint">&larr; &rarr; step &nbsp;|&nbsp; 1-8 module &nbsp;|&nbsp; F fullscreen</span>
   <button id="ctlbtn">&#9881; Controls</button>
   <button id="prbtn">&#9654; Present</button>
   <button id="next">Next &rarr;</button>
@@ -724,7 +762,7 @@ const C = (() => {
   function build() {
     svg.replaceChildren();
     const ux = k => 70 + k * ((W - 140) / 3), rx = k => W * (k + .5) / SLOTS - RW / 2;
-    E = { links: [], ups: [], rows: [], heat: [] };
+    E = { links: [], ups: [], rows: [], heat: [], heatSum: [] };
     for (let k = 0; k < SLOTS; k++) U.forEach(u => {
       const x1 = ux(U.indexOf(u)), y1 = uy + UH, x2 = rx(k) + RW / 2, y2 = ry;
       const g = s("g", { class: "lk" }, svg);
@@ -753,8 +791,8 @@ const C = (() => {
       E.rows.push({ g, rect, t1, t2 });
     }
     const t = h("table", "mat heat");
-    t.append(h("tr", null, `<th>f fails &#8595; &nbsp; load on u &#8594;</th>` + U.map(u => `<th>${u}</th>`).join("")));
-    U.forEach((ff, a) => { const tr = h("tr"); tr.append(h("td", "lab", "f = " + ff)); const cells = U.map(() => { const td = h("td"); tr.append(td); return td; }); tr.onclick = () => { f = ff; update(step); }; tr.style.cursor = "pointer"; t.append(tr); E.heat.push(cells); });
+    t.append(h("tr", null, `<th>f fails &#8595; &nbsp; load on u &#8594;</th>` + U.map(u => `<th>${u}</th>`).join("") + `<th class="sumh">&Sigma; = P<sub>g</sub></th>`));
+    U.forEach((ff, a) => { const tr = h("tr"); tr.append(h("td", "lab", "f = " + ff)); const cells = U.map(() => { const td = h("td"); tr.append(td); return td; }); const sc = h("td", "sumc"); tr.append(sc); E.heatSum.push(sc); tr.onclick = () => { f = ff; update(step); }; tr.style.cursor = "pointer"; t.append(tr); E.heat.push(cells); });
     heatWrap.append(t);
   }
   build();
@@ -769,14 +807,14 @@ const C = (() => {
 
   const panel = makePanel("What happens when one UPS fails", "Coefficient c[s,f,u]: the share of a row's kW that lands on UPS u.", [
     { at: 0, html: () => { const rs = rowsOfG(gsel); return `Group ${gsel + 1}: each row plugs into a subset <span class="f">s</span> of the 4 UPS. Normally it shares its kW equally: <span class="f">c = 1/|s|</span>.<br><span class="note">${rs.map(r => `<span class="dot" style="background:${ROWCOL[r.i % ROWCOL.length]}"></span>R${r.i + 1}: ${r.kw} kW on ${r.sub}`).join(" &nbsp; ")}</span>`; } },
-    { at: 1, html: () => `UPS <span class="v">${f}</span> fails (click any UPS to change). Rows plugged into it re-share among the <b>survivors</b>: <span class="f">1/(|s|&minus;1)</span> each. Other rows are unchanged.` },
-    { at: 2, html: () => `Try every failure f. Cell [f,u] = load on u when f fails. Click a row to preview that failure.<br><span class="note">4 &times; 3 = 12 cells per group.</span>` },
+    { at: 1, html: () => `UPS <span class="v">${f}</span> fails (click any UPS to change). Its load (arrow) moves to the partners. Rows plugged into it re-share among the <b>survivors</b>: <span class="f">1/(|s|&minus;1)</span> each. Other rows are unchanged.` },
+    { at: 2, html: () => `Try every failure f. Cell [f,u] = load on u when f fails. Click a row to preview that failure.<br><b>Load never disappears, it only moves:</b> every row adds up to the group total, <span class="f">&Sigma;<sub>u&ne;f</sub> L = P<sub>g</sub></span>.` },
     { at: 3, html: () => { const m = [0, 1, 2].map(maxFailG), M = Math.max(...m); return `Max-fail load of group ${gsel + 1}: <span class="big">${fmt(m[gsel], 0)} kW</span><br><span class="note">The hall's M is the worst group: ${fmt(M, 0)} kW. Change pairs on the Pairing page and watch it move.</span>`; } },
   ]);
 
   function update(st) {
     step = st;
-    const rs = rowsOfG(gsel), fault = st >= 1 ? f : null, L = loadsOf(rs, fault), mx = Math.max(...Object.values(L), 1);
+    const rs = rowsOfG(gsel), fault = st >= 1 ? f : null, L = loadsOf(rs, fault), L0 = loadsOf(rs, null), mx = Math.max(...Object.values(L), 1);
     tabEls.forEach((b, g) => { b.innerHTML = `<span class="dot" style="background:${COLORS[g]}"></span>Group ${g + 1} &middot; ${rowsOfG(g).length} rows`; b.classList.toggle("on", g === gsel); });
     E.rows.forEach((o, k) => {
       const r = rs[k]; o.g.style.opacity = r ? 1 : 0;
@@ -802,7 +840,7 @@ const C = (() => {
       o.g.classList.toggle("dead", dead);
       o.nm.textContent = "UPS " + o.u + (dead ? "  ✕" : ""); o.nm.style.fill = dead ? "#fb7185" : "#e8eaed";
       o.kw.style.fill = dead ? "#fb7185" : "#f5a524";
-      if (dead) { o.kw._v = null; o.kw.textContent = "FAILED"; } else tween(o.kw, L[o.u], v => fmt(v, 0) + " kW");
+      if (dead) { o.kw._v = null; o.kw.textContent = "\u2192 " + fmt(L0[o.u], 0) + " kW"; } else tween(o.kw, L[o.u], v => fmt(v, 0) + " kW");
       const bh = dead ? 0 : 36 * L[o.u] / mx; o.bar.style.height = bh + "px"; o.bar.style.y = (uy + UH - 7 - bh) + "px";
     });
     heatWrap.classList.toggle("on", st >= 2);
@@ -813,6 +851,8 @@ const C = (() => {
         if (v == null) { td.textContent = "-"; td.style.background = ""; } else { td.textContent = fmt(v, 0); td.style.background = `rgba(245,165,36,${.08 + .55 * v / mxv})`; td.style.color = "#e8eaed"; }
         td.style.boxShadow = U[a] === f ? "inset 0 0 0 1px rgba(255,255,255,.18)" : "";
       }));
+      const total = sum(rs.map(r => r.kw));
+      M.forEach((r, a) => { const sm = r.reduce((x, v) => x + (v || 0), 0), c = E.heatSum[a]; c.textContent = fmt(sm, 0) + (Math.abs(sm - total) < 1e-6 ? " \u2713" : ""); c.className = "sumc" + (Math.abs(sm - total) < 1e-6 ? " ok" : ""); });
     }
     const mfs = [0, 1, 2].map(maxFailG), MM = Math.max(...mfs);
     gsum.classList.toggle("on", st >= 3);
@@ -847,7 +887,24 @@ const D = (() => {
   }
   let step = 0;
   const stage = h("div", "stage top");
-  const grid = h("div", "grid2"), bars = h("div"); stage.append(grid, bars);
+  const grid = h("div", "grid2"), bars = h("div");
+  let Mval = null, lastStep = -1, anim = 0;
+  const mbar = h("div", "mbar", '<div class="mt">Try M = <b class="mv"></b> kW <span class="mmsg"></span></div><input type="range" min="0" max="100" step="1"><button>Push M down</button>');
+  const mIn = $("input", mbar), mv = $(".mv", mbar), mmsg = $(".mmsg", mbar), mBtn = $("button", mbar);
+  stage.append(grid, bars, mbar);
+  function markViol() {
+    let n = 0, mxc = 0;
+    cards.forEach(o => o.cells.forEach(r => r.forEach(td => { if (td._v == null) return; mxc = Math.max(mxc, td._v); const bad = td._v > Mval + 1e-9; if (bad) n++; td.classList.toggle("viol", bad); })));
+    mv.textContent = fmt(Mval, 0); mIn.value = Mval;
+    mmsg.innerHTML = n ? `<span style="color:var(--rose)">${n} cell${n > 1 ? "s" : ""} break M &ge; L</span>` : `<span style="color:var(--teal)">every cell satisfies M &ge; L</span> &middot; smallest possible M = ${fmt(mxc, 0)}`;
+    return mxc;
+  }
+  mIn.oninput = () => { cancelAnimationFrame(anim); Mval = +mIn.value; markViol(); };
+  mBtn.onclick = () => {
+    cancelAnimationFrame(anim); const target = markViol(), from = Mval, t0 = performance.now();
+    const stepf = t => { const k = Math.min(1, (t - t0) / 2600), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; Mval = from + (target - from) * e; markViol(); if (k < 1) anim = requestAnimationFrame(stepf); };
+    if (from > target) stepf(t0); else { Mval = target * 1.1; markViol(); anim = requestAnimationFrame(t => { const f0 = Mval; const g = tt => { const k = Math.min(1, (tt - t) / 2600), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; Mval = f0 + (target - f0) * e; markViol(); if (k < 1) anim = requestAnimationFrame(g); }; g(t); }); }
+  };
   const cards = [0, 1, 2].map(gi => {
     const card = h("div", "gcard"); card.append(h("h4", null, `<span class="dot" style="background:${COLORS[gi]}"></span><span class="gt"></span>`));
     const t = h("table", "mat heat"); t.append(h("tr", null, "<th></th>" + U.map(u => `<th>${u}</th>`).join("")));
@@ -874,7 +931,7 @@ const D = (() => {
   };
   const panel = makePanel("Objective: minimise the worst case", "min M such that M is above every possible post-failure UPS load.", [
     { at: 0, html: () => `For each group, fail each UPS in turn; each surviving UPS then carries some load. Every cell below is one such load (kW).` },
-    { at: 1, html: () => `<span class="f">M &ge; &Sigma; c[s,f,u] &middot; kW &middot; q[i,g,s]</span> &nbsp; for every group g, every failed f, every survivor u.<br><span class="note">${G} groups &times; 4 &times; 3 = ${G * 12} constraints. Objective: <b>minimise M</b> (+ a tiny &epsilon;&middot;&Sigma;loads tie-break).</span>` },
+    { at: 1, html: () => `<span class="f">M &ge; &Sigma; c[s,f,u] &middot; kW &middot; q[i,g,s]</span> &nbsp; for every group g, every failed f, every survivor u. <b>Drag the M slider below</b>: cells above it turn red.<br><span class="note">${G} groups &times; 4 &times; 3 = ${G * 12} constraints. Objective: <b>minimise M</b> (+ a tiny &epsilon;&middot;&Sigma;loads tie-break).</span>` },
     { at: 2, html: () => { const k = info(); return `q[i,g,s] = 1 chooses each row's UPS pair. Naive (every row on AB): <span class="v">${fmt(k.naiveM, 0)} kW</span>. Best pairing: <span class="big">${fmt(k.M, 0)} kW</span>`; } },
     { at: 3, html: () => { const k = info(), g = k.res.findIndex(r => Math.abs(r.b.mf - k.M) < 1e-6); return `M* = max over groups = <span class="v">${fmt(k.M, 1)} kW</span>. The bottleneck is <b>group ${g + 1}</b>. Its failure load sizes every UPS in the hall.`; } },
     { at: 4, html: () => { const k = info(); return `Even with perfect balance: <span class="f">LB = (&Sigma;P / G) / (n&minus;1) = (${fmt(k.T, 0)} / ${G}) / 3</span> = <span class="v">${fmt(k.LB, 1)} kW</span>.<br><b>Gap</b> = (M* &minus; LB) / M* = <span class="v">${fmt((k.M - k.LB) / k.M * 100, 1)}%</span><br><span class="note">Gap = how far the answer could still be from the best possible. 0% means proven optimal.</span>`; } },
@@ -887,11 +944,16 @@ const D = (() => {
       const o = cards[gi], assign = st >= 2 ? r.b.assign : r.kws.map(() => "AB"), m = evalAssign(r.kws, assign), mx = maxOf(m);
       o.card.classList.toggle("hot", st >= 3 && gi === g0);
       o.gt.innerHTML = `Group ${gi + 1} &middot; ${r.kws.length} rows &middot; &Sigma;P = ${r.total} kW`;
-      m.forEach((rw, a) => rw.forEach((v, b) => { const td = o.cells[a][b]; if (a === b) { td.className = "diag"; td.textContent = "-"; td.style.background = ""; return; } td.className = st >= 1 && Math.abs(v - mx) < 1e-9 ? "max" : ""; td.textContent = fmt(v, 0); td.style.background = `rgba(245,165,36,${.08 + .55 * v / (mx || 1)})`; td.style.color = "#e8eaed"; }));
+      m.forEach((rw, a) => rw.forEach((v, b) => { const td = o.cells[a][b]; if (a === b) { td._v = null; td.className = "diag"; td.textContent = "-"; td.style.background = ""; return; } td._v = v; td.className = st >= 1 && Math.abs(v - mx) < 1e-9 ? "max" : ""; td.textContent = fmt(v, 0); td.style.background = `rgba(245,165,36,${.08 + .55 * v / (mx || 1)})`; td.style.color = "#e8eaed"; }));
       o.tag.innerHTML = `rows: ${r.kws.map((kw, i) => `${kw}&rarr;${assign[i]}`).join(", ")}<br>max-fail <b style="color:var(--amber)">${fmt(mx, 0)} kW</b>`;
     });
     const mxBar = Math.max(k.naiveM, k.M, k.LB) * 1.05, vals = [k.naiveM, k.M, k.LB];
     barEls.forEach((e, i) => { $(".tr div", e).style.width = vals[i] / mxBar * 100 + "%"; tween($(".num", e), vals[i], v => fmt(v, 0) + " kW"); e.classList.toggle("on", st >= barDefs[i].at); });
+    mbar.classList.toggle("on", st >= 1);
+    let mxAll = 0; cards.forEach(o => o.cells.forEach(r => r.forEach(td => { if (td._v != null) mxAll = Math.max(mxAll, td._v); })));
+    mIn.max = Math.ceil(mxAll * 1.15);
+    if (st !== lastStep) { lastStep = st; cancelAnimationFrame(anim); Mval = mxAll * 1.1; }
+    markViol();
     strip.upd(st); panel.update(st);
   }
   return { id: "objective", name: "Minimise M", steps: ["Fail one UPS", "M >= every cell", "Best pairing", "Bottleneck", "Bound & gap"], nodes: [strip, wrap, panel], update, best };
@@ -1333,8 +1395,56 @@ const PM = (() => {
   return { id: "pairing", name: "Pairing q", steps: ["Rows & groups", "Binary q", "One pair per row", "Normal load"], nodes: [strip, wrap, panel], update };
 })();
 
+/* =========================================================
+   MODULE - Model summary (the whole of section 3.3 on one page)
+   ========================================================= */
+const SM = (() => {
+  let step = 0;
+  const CARDS = [
+    { at: 0, page: "space", title: "Data and sets", f: `G &emsp; U = {A, B, C, D} &emsp; P<sub>i</sub> &emsp; S<sub>i</sub>`, t: "Groups, UPS units, the kW of each row, and the allowed UPS subsets of each row (pairs, or all four for 4-source)." },
+    { at: 1, page: "cuts", title: "Grouping", f: `t<sub>i,g</sub> &ge; t<sub>i+1,g</sub> &emsp; y<sub>i,g</sub> = t<sub>i,g</sub> &minus; t<sub>i,g&minus;1</sub>`, t: "Cut lines as binary t. Every group is a block of adjacent rows. y says which group a row is in." },
+    { at: 2, page: "pairing", title: "Pairing", f: `${sig("", "s&isin;S<sub>i</sub>")} q<sub>i,g,s</sub> = y<sub>i,g</sub>`, t: "Each row picks exactly one UPS subset, but only inside its own group." },
+    { at: 3, page: "fail", title: "Load after a failure", f: `L<sub>g,f,u</sub> = ${sig("R", "i=1")} P<sub>i</sub> ${sig("s", "")} c<sub>s,f,u</sub> q<sub>i,g,s</sub>`, t: "If UPS f fails, its rows re-share among the survivors. The load only moves: it still adds up to P<sub>g</sub>." },
+    { at: 4, page: "objective", title: "Objective", f: `min&ensp;M + &epsilon; ${sig("g,f,u", "")} L<sub>g,f,u</sub> &emsp; M &ge; L<sub>g,f,u</sub>`, t: "Push the worst post-failure load M as low as possible. The tiny &epsilon; only breaks ties." },
+    { at: 5, page: "bnb", title: "How it is solved", f: `LP relaxation &rarr; branch &rarr; prune`, t: "Simplex walks the corners of the relaxed problem. Branch and bound forces t and q to 0 or 1 and drops branches that cannot win." },
+  ];
+  const chain = h("div", "chain");
+  const CH = [["cuts t", 1], ["groups y", 1], ["pairs q", 2], ["loads L", 3], ["worst case M", 4], ["solver", 5]];
+  CH.forEach(([n, at], i) => { if (i) chain.append(h("span", "ar", "&rarr;")); const c = h("div", "chip2", n); c.dataset.at = at; chain.append(c); });
+  const grid = h("div", "sgrid");
+  const cardEls = CARDS.map(c => {
+    const e = h("div", "scard", `<div class="sh"><b></b><button>Open page</button></div><div class="sf">${c.f}</div><div class="st">${c.t}</div>`);
+    $("b", e).textContent = c.title; e.dataset.at = c.at;
+    $("button", e).onclick = () => { const i = MODS.findIndex(m => m.id === c.page); if (i >= 0) go(i, 0); };
+    grid.append(e); return e;
+  });
+  const stage = h("div", "stage top"); stage.append(chain, grid);
+  const wrap = h("div", "stagewrap"); wrap.append(stage, h("div", "controls", "<span>Click Open page on any card to jump to the page that explains it.</span>"));
+
+  const strip = mkStrip(
+    tm(0, 0, `G, U, P<sub>i</sub>, S<sub>i</sub>`) + tm(1, 1, `t<sub>i,g</sub> &ge; t<sub>i+1,g</sub>`) + tm(2, 2, `${sig("", "s")} q<sub>i,g,s</sub> = y<sub>i,g</sub>`) +
+    tm(3, 3, `L<sub>g,f,u</sub> = ${sig("", "i,s")} P<sub>i</sub> c<sub>s,f,u</sub> q<sub>i,g,s</sub>`) + tm(4, 4, `min&ensp;M + &epsilon;${sig("", "")}L &emsp; M &ge; L<sub>g,f,u</sub>`) + tm(5, 5, `LP &rarr; branch &rarr; prune`));
+
+  const panel = makePanel("The whole model in one picture", "Every equation of section 3.3, in the order the solver uses it.", [
+    { at: 0, html: () => `We have groups, UPS units, and rows with a load in kW. Each row may plug into certain UPS subsets.` },
+    { at: 1, html: () => `<b>Step 1: choose the cuts.</b> Binary t cuts the hall into adjacent blocks of rows (the groups).` },
+    { at: 2, html: () => `<b>Step 2: choose the pairs.</b> Binary q picks one UPS subset per row. t and q are tied together by y.` },
+    { at: 3, html: () => `<b>Step 3: measure the damage.</b> For every group, every failed UPS and every survivor, L is the load that lands there.` },
+    { at: 4, html: () => `<b>Step 4: minimise the worst case.</b> M must be at least every L. Minimising M gives the cuts and pairs with the lowest worst-case failure load, which sizes the UPS.` },
+    { at: 5, html: () => `<b>Step 5: let the solver do it.</b> Relax t and q, solve an LP, branch and prune until the gap closes. The big picture: <span class="f">cuts &rarr; groups &rarr; pairs &rarr; loads &rarr; M</span>.` },
+  ]);
+
+  function update(st) {
+    step = st;
+    cardEls.forEach(e => { const a = +e.dataset.at; e.classList.toggle("on", st >= a); e.classList.toggle("cur", st === a); });
+    $$(".chip2", chain).forEach(c => { const a = +c.dataset.at; c.classList.toggle("on", st >= a); c.classList.toggle("cur", st === a); });
+    strip.upd(st); panel.update(st);
+  }
+  return { id: "summary", name: "Summary", steps: ["Data", "Grouping", "Pairing", "Load", "Objective", "Solving"], nodes: [strip, wrap, panel], update };
+})();
+
 // keep the dots refreshed after "New rows"
-const MODS = [A, B, PM, C, D, E, F];
+const MODS = [A, B, PM, C, D, E, F, SM];
 let mi = 0, st = 0;
 const nav = $("#nav"), main = $("#main"), dots = $("#dots");
 MODS.forEach((m, i) => {
@@ -1357,7 +1467,7 @@ addEventListener("keydown", e => {
   if (e.key === "ArrowRight" || e.key === "PageDown") next();
   else if (e.key === "ArrowLeft" || e.key === "PageUp") prev();
   else if (e.key === " " && e.target.tagName !== "BUTTON") { e.preventDefault(); next(); }
-  else if (/^[1-7]$/.test(e.key)) go(+e.key - 1, 0);
+  else if (/^[1-8]$/.test(e.key)) go(+e.key - 1, 0);
   else if (e.key.toLowerCase() === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
 });
 MODS.forEach(m => m.update(0));
